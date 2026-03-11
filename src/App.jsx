@@ -73,27 +73,45 @@ function App() {
         return currency === 'EUR' ? `${prefix}${formatted} ${symbol}` : `${prefix}${symbol}${formatted}`;
     };
 
-    // AUTHENTICATION STATE
-    const [isAuthenticated, setIsAuthenticated] = useState(() => {
-        return localStorage.getItem('fund_auth_token') === 'secure_access_granted';
-    });
+    // SUPABASE AUTH STATE
+    const [session, setSession] = useState(null);
+    const [authLoading, setAuthLoading] = useState(true);
+    const [authError, setAuthError] = useState('');
+    const [emailInput, setEmailInput] = useState('');
     const [passwordInput, setPasswordInput] = useState('');
+    const [authSubmitting, setAuthSubmitting] = useState(false);
 
-    const handleLogin = (e) => {
+    useEffect(() => {
+        // Get initial session
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            setSession(session);
+            setAuthLoading(false);
+        });
+        // Listen for auth changes (login, logout, token refresh)
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            setSession(session);
+            setAuthLoading(false);
+        });
+        return () => subscription.unsubscribe();
+    }, []);
+
+    const handleLogin = async (e) => {
         e.preventDefault();
-        // Contraseña maestra de la aplicación
-        if (passwordInput === 'inversor2026') {
-            setIsAuthenticated(true);
-            localStorage.setItem('fund_auth_token', 'secure_access_granted');
-        } else {
-            alert('Contraseña incorrecta');
+        setAuthError('');
+        setAuthSubmitting(true);
+        const { error } = await supabase.auth.signInWithPassword({
+            email: emailInput,
+            password: passwordInput,
+        });
+        if (error) {
+            setAuthError('Email o contraseña incorrectos.');
             setPasswordInput('');
         }
+        setAuthSubmitting(false);
     };
 
-    const handleLogout = () => {
-        localStorage.removeItem('fund_auth_token');
-        setIsAuthenticated(false);
+    const handleLogout = async () => {
+        await supabase.auth.signOut();
     };
 
     const [currentView, setCurrentView] = useState('dashboard');
@@ -104,6 +122,7 @@ function App() {
     const [cashInput, setCashInput] = useState('');
 
     useEffect(() => {
+        if (!session) return; // Don't fetch without a valid session
         const fetchOrders = async () => {
             try {
                 const { data, error } = await supabase.from('orders').select('*').order('id', { ascending: false });
@@ -122,7 +141,7 @@ function App() {
             }
         };
         fetchOrders();
-    }, []);
+    }, [session]);
 
     const [currentNavs, setCurrentNavs] = useState(() => {
         const saved = localStorage.getItem('fundManagerNavs');
@@ -229,8 +248,9 @@ function App() {
             }
         };
 
+        if (!session) return; // Don't fetch NAVs without a valid session
         fetchNavs();
-    }, []);
+    }, [session]);
 
     const mapToDb = (o) => {
         const mapped = { ...o };
@@ -527,35 +547,57 @@ function App() {
     }, [orders.length]);
 
     const plusvalia = totalCarteraValorada - totalCapitalAportado;
-
     const isPositive = plusvalia >= 0;
 
-    if (!isAuthenticated) {
+    // Auth loading screen
+    if (authLoading) {
         return (
-            <div className="min-h-screen bg-[#111] flex items-center justify-center p-4 font-sans space-y-0 text-white">
+            <div className="min-h-screen bg-[#111] flex items-center justify-center">
+                <div className="text-gray-500 text-sm animate-pulse">Verificando sesión...</div>
+            </div>
+        );
+    }
+
+    if (!session) {
+        return (
+            <div className="min-h-screen bg-[#111] flex items-center justify-center p-4 font-sans text-white">
                 <div className="bg-[#1a1a1a] p-8 rounded-2xl border border-gray-800 shadow-2xl w-full max-w-sm relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/10 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
                     <div className="flex justify-center mb-6">
-                        <div className="w-16 h-16 bg-[#111] border border-gray-800 rounded-full flex items-center justify-center relative shadow-inner shadow-black/50">
+                        <div className="w-16 h-16 bg-[#111] border border-gray-800 rounded-full flex items-center justify-center shadow-inner shadow-black/50">
                             <Lock className="w-7 h-7 text-blue-500" />
                         </div>
                     </div>
                     <h2 className="text-xl font-bold text-center mb-1 bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-400">Acceso Privado</h2>
-                    <p className="text-gray-500 text-xs text-center mb-8 uppercase tracking-widest font-semibold">TULOGY FUND MANAGER</p>
+                    <p className="text-gray-500 text-xs text-center mb-8 uppercase tracking-widest font-semibold">FUND MANAGER</p>
 
-                    <form onSubmit={handleLogin}>
-                        <div className="relative mb-6">
-                            <input
-                                type="password"
-                                value={passwordInput}
-                                onChange={(e) => setPasswordInput(e.target.value)}
-                                placeholder="PIN DE ACCESO"
-                                className="w-full bg-[#111] border border-gray-800 rounded-xl px-4 py-4 text-white hover:border-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 transition-all text-center tracking-[0.4em] font-mono shadow-inner shadow-black/20"
-                                autoFocus
-                            />
-                        </div>
-                        <button type="submit" className="w-full bg-gradient-to-b from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 text-white font-semibold py-3.5 rounded-xl transition-all shadow-[0_0_20px_rgba(37,99,235,0.2)] active:scale-[0.98]">
-                            Desbloquear
+                    <form onSubmit={handleLogin} className="space-y-3">
+                        <input
+                            type="email"
+                            value={emailInput}
+                            onChange={(e) => setEmailInput(e.target.value)}
+                            placeholder="Email"
+                            className="w-full bg-[#111] border border-gray-800 rounded-xl px-4 py-3.5 text-white hover:border-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 transition-all"
+                            autoFocus
+                            required
+                        />
+                        <input
+                            type="password"
+                            value={passwordInput}
+                            onChange={(e) => setPasswordInput(e.target.value)}
+                            placeholder="Contraseña"
+                            className="w-full bg-[#111] border border-gray-800 rounded-xl px-4 py-3.5 text-white hover:border-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 transition-all"
+                            required
+                        />
+                        {authError && (
+                            <div className="text-red-400 text-sm text-center">{authError}</div>
+                        )}
+                        <button
+                            type="submit"
+                            disabled={authSubmitting}
+                            className="w-full bg-gradient-to-b from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 text-white font-semibold py-3.5 rounded-xl transition-all shadow-[0_0_20px_rgba(37,99,235,0.2)] active:scale-[0.98] disabled:opacity-50 mt-2"
+                        >
+                            {authSubmitting ? 'Verificando...' : 'Entrar'}
                         </button>
                     </form>
                 </div>
@@ -598,8 +640,8 @@ function App() {
                             <button
                                 onClick={() => setIsRetroMode(!isRetroMode)}
                                 className={`p-2 rounded-lg border transition-colors ${isRetroMode
-                                        ? 'bg-green-500/10 border-green-500/50 text-green-400'
-                                        : 'bg-surface hover:bg-gray-800 text-gray-400 hover:text-white border-gray-800'
+                                    ? 'bg-green-500/10 border-green-500/50 text-green-400'
+                                    : 'bg-surface hover:bg-gray-800 text-gray-400 hover:text-white border-gray-800'
                                     }`}
                                 title={isRetroMode ? 'Modo moderno' : 'Modo retro CRT'}
                             >
