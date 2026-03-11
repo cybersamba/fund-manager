@@ -1,0 +1,269 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-background text-text antialiased;
+  }
+}
+
+.input-field {
+  @apply w-full bg-surface border border-gray-700 rounded-lg px-4 py-2 text-text focus:outline-none focus:ring-2 focus:ring-primary transition-all;
+}
+
+.btn-primary {
+  @apply px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg font-medium transition-all shadow-lg shadow-blue-500/20 active:scale-95;
+}
+
+.card {
+  @apply bg-surface border border-gray-800 rounded-xl p-6 shadow-xl;
+}
+
+/* ═══════════════════════════════════════════════════
+   RETRO CRT PHOSPHOR-GREEN MODE
+   ═══════════════════════════════════════════════════ */
+
+/* Blinking cursor */
+@keyframes blink-cursor {
+
+  0%,
+  49% {
+    opacity: 1;
+  }
+
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Screen flicker */
+@keyframes crt-flicker {
+  0% {
+    opacity: 1;
+  }
+
+  3% {
+    opacity: 0.96;
+  }
+
+  6% {
+    opacity: 1;
+  }
+
+  72% {
+    opacity: 1;
+  }
+
+  74% {
+    opacity: 0.97;
+  }
+
+  76% {
+    opacity: 1;
+  }
+}
+
+/* Scanline scroll */
+@keyframes scanlines {
+  0% {
+    background-position: 0 0;
+  }
+
+  100% {
+    background-position: 0 100%;
+  }
+}
+
+/* Phosphor text glow pulse */
+@keyframes phosphor-glow {
+
+  0%,
+  100% {
+    text-shadow: 0 0 8px #00ff41, 0 0 20px #00cc35;
+  }
+
+  50% {
+    text-shadow: 0 0 4px #00ff41, 0 0 12px #00cc35;
+  }
+}
+
+body.retro {
+  background: #000900 !important;
+  color: #00ff41 !important;
+  font-family: 'VT323', 'Courier New', monospace !important;
+  font-size: 18px !important;
+  animation: crt-flicker 6s infinite;
+  cursor: none;
+}
+
+/* Custom green cursor */
+body.retro * {
+  cursor: none;
+}
+
+body.retro::before {
+  /* Scanlines overlay */
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(0deg,
+      transparent,
+      transparent 3px,
+      rgba(0, 0, 0, 0.18) 3px,
+      rgba(0, 0, 0, 0.18) 4px);
+  pointer-events: none;
+  z-index: 9997;
+}
+
+body.retro::after {
+  /* Vignette + screen curvature glow on edges */
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(ellipse at center,
+      transparent 60%,
+      rgba(0, 0, 0, 0.6) 100%);
+  pointer-events: none;
+  z-index: 9998;
+}
+
+/* Global overrides for all elements in retro mode */
+body.retro .card,
+body.retro aside,
+body.retro header,
+body.retro nav {
+  background: #000900 !important;
+  border-color: #00ff41 !important;
+  color: #00ff41 !important;
+  box-shadow: 0 0 12px rgba(0, 255, 65, 0.2), inset 0 0 16px rgba(0, 255, 65, 0.05) !important;
+  border-radius: 0 !important;
+}
+
+body.retro *:not(svg):not(path):not(rect):not(circle):not(line):not(polyline) {
+  color: #00ff41 !important;
+  border-color: #00562a !important;
+  border-radius: 0 !important;
+  font-family: 'VT323', 'Courier New', monospace !important;
+}
+
+body.retro input,
+body.retro select,
+body.retro textarea {
+  background: #000f03 !important;
+  border: 1px solid #00ff41 !important;
+  color: #00ff41 !important;
+  caret-color: #00ff41;
+  box-shadow: 0 0 6px rgba(0, 255, 65, 0.3) inset !important;
+}
+
+body.retro button {
+  background: #000f03 !important;
+  border: 1px solid #00ff41 !important;
+  color: #00ff41 !important;
+  box-shadow: 0 0 8px rgba(0, 255, 65, 0.25) !important;
+}
+
+body.retro button:hover {
+  background: rgba(0, 255, 65, 0.15) !important;
+  box-shadow: 0 0 16px rgba(0, 255, 65, 0.5) !important;
+}
+
+body.retro button:disabled {
+  opacity: 0.3 !important;
+}
+
+body.retro h1,
+body.retro h2,
+body.retro h3 {
+  text-shadow: 0 0 10px #00ff41, 0 0 25px #00cc35 !important;
+  animation: phosphor-glow 3s ease-in-out infinite !important;
+  letter-spacing: 0.05em !important;
+}
+
+/* SVG icons: tint green */
+body.retro svg {
+  filter: drop-shadow(0 0 4px #00ff41);
+  color: #00ff41 !important;
+}
+
+/* Active nav item */
+body.retro .bg-blue-500\/10,
+body.retro .bg-success\/10,
+body.retro .bg-indigo-600\/20,
+body.retro .bg-indigo-900\/20,
+body.retro .bg-emerald-500\/5 {
+  background: rgba(0, 255, 65, 0.08) !important;
+}
+
+/* Charts */
+body.retro .recharts-surface {
+  filter: hue-rotate(100deg) saturate(2) brightness(1.2);
+}
+
+/* Blinking cursor element */
+.retro-caret {
+  display: none;
+}
+
+body.retro .retro-caret {
+  display: inline-block;
+  width: 10px;
+  height: 18px;
+  background: #00ff41;
+  margin-left: 4px;
+  vertical-align: middle;
+  box-shadow: 0 0 8px #00ff41;
+  animation: blink-cursor 1s step-end infinite;
+}
+
+/* Override gradient backgrounds */
+body.retro [class*="from-"],
+body.retro [class*="to-"],
+body.retro [class*="via-"] {
+  background: #000900 !important;
+}
+
+/* Scrollbar */
+body.retro ::-webkit-scrollbar {
+  width: 8px;
+  background: #000;
+}
+
+body.retro ::-webkit-scrollbar-thumb {
+  background: #00ff41;
+  box-shadow: 0 0 6px #00ff41;
+}
+
+/* Positive/negative overrides (green is now "normal", use bright vs dim) */
+body.retro .text-success,
+body.retro .text-green-400,
+body.retro .text-emerald-400 {
+  text-shadow: 0 0 8px #00ff41 !important;
+}
+
+body.retro .text-danger,
+body.retro .text-red-400,
+body.retro .text-red-500 {
+  color: #ff4141 !important;
+  text-shadow: 0 0 8px #ff4141 !important;
+}
+
+/* Real blinking cursor overlay follower */
+#retro-cursor {
+  display: none;
+  position: fixed;
+  width: 10px;
+  height: 18px;
+  background: #00ff41;
+  pointer-events: none;
+  z-index: 99999;
+  box-shadow: 0 0 10px #00ff41, 0 0 20px #00cc35;
+  animation: blink-cursor 1s step-end infinite;
+  transform: translate(-2px, -16px);
+}
+
+body.retro #retro-cursor {
+  display: block;
+}
