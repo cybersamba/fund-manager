@@ -44,7 +44,10 @@ export default function OrderList({ orders, isPrivacyMode, currency, formatCurre
 
     const totalPages = Math.ceil(orders.length / ITEMS_PER_PAGE);
     const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-    const paginatedOrders = orders.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+    
+    // Ensure orders are always sorted by date descending regardless of source order
+    const sortedOrders = [...orders].sort((a, b) => new Date(b.date) - new Date(a.date));
+    const paginatedOrders = sortedOrders.slice(startIndex, startIndex + ITEMS_PER_PAGE);
 
     return (
         <div className="card">
@@ -142,7 +145,7 @@ export default function OrderList({ orders, isPrivacyMode, currency, formatCurre
                                                 : <ArrowUpRight size={20} />}
                                 </div>
                                 <div>
-                                    <div className="font-medium text-white text-sm max-w-[180px] sm:max-w-[220px] truncate" title={order.fundName}>{order.fundName}</div>
+                                    <div className="font-medium text-white text-sm whitespace-normal" title={order.fundName}>{order.fundName}</div>
                                     <div className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
                                         <Calendar size={12} />
                                         {new Date(order.date).toLocaleDateString()}
@@ -162,7 +165,7 @@ export default function OrderList({ orders, isPrivacyMode, currency, formatCurre
                                     )}
                                     {order.type === 'deposit' && (
                                         <div className="text-[10px] text-gray-400 font-medium">
-                                            {order.duration} meses AL {order.interestRate}%
+                                            {order.duration || order.duration_months || 0} meses AL {order.interestRate !== undefined ? order.interestRate : (order.interestrate !== undefined ? order.interestrate : 0)}%
                                         </div>
                                     )}
                                 </div>

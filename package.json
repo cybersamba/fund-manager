@@ -11,6 +11,7 @@
         "preview": "vite preview"
     },
     "dependencies": {
+        "@react-oauth/google": "^0.13.4",
         "@supabase/supabase-js": "^2.99.0",
         "cors": "^2.8.6",
         "express": "^5.2.1",
@@ -30,6 +31,7 @@
         "eslint-plugin-react": "^7.34.0",
         "eslint-plugin-react-hooks": "^4.6.0",
         "eslint-plugin-react-refresh": "^0.4.5",
+        "node-fetch": "^3.3.2",
         "postcss": "^8.4.35",
         "tailwindcss": "^3.4.1",
         "vite": "^5.1.5"

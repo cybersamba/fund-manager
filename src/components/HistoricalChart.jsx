@@ -1,8 +1,19 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { getMatchingFundKey } from '../utils/helpers';
 
 export default function HistoricalChart({ orders, historicalNavs, isPrivacyMode, currency, formatCurrency }) {
+    const [period, setPeriod] = useState('ALL');
+
+    const periods = [
+        { id: '1W', label: '1S', days: 7 },
+        { id: '1M', label: '1M', days: 30 },
+        { id: '3M', label: '3M', days: 90 },
+        { id: '6M', label: '6M', days: 180 },
+        { id: '1Y', label: '1A', days: 365 },
+        { id: 'ALL', label: 'MAX', days: null }
+    ];
+
     const chartData = useMemo(() => {
         if (!orders || orders.length === 0 || !historicalNavs || Object.keys(historicalNavs).length === 0) return [];
 
@@ -10,12 +21,21 @@ export default function HistoricalChart({ orders, historicalNavs, isPrivacyMode,
         const hasNavData = Object.values(historicalNavs).some(navArray => navArray && navArray.length > 0);
         if (!hasNavData) return [];
 
-        const firstOrderDate = new Date(Math.min(...orders.map(o => new Date(o.date).getTime())));
-        firstOrderDate.setHours(0, 0, 0, 0);
-
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
+        let startDate;
+        const selectedPeriod = periods.find(p => p.id === period);
+        
+        if (selectedPeriod && selectedPeriod.days) {
+            startDate = new Date(today);
+            startDate.setDate(today.getDate() - selectedPeriod.days);
+        } else {
+            startDate = new Date(Math.min(...orders.map(o => new Date(o.date).getTime())));
+        }
+        startDate.setHours(0, 0, 0, 0);
+
+        // Pre-calculate full history to get holdings at any point
         const fundNames = Object.keys(historicalNavs);
         const navMap = {};
 
@@ -30,7 +50,6 @@ export default function HistoricalChart({ orders, historicalNavs, isPrivacyMode,
             }
         });
 
-        // Helper to find nearest past NAV up to 7 days
         const getNavForDate = (fund, targetTime) => {
             const matchKey = getMatchingFundKey(navMap, fund);
             if (!navMap[matchKey]) return 0;
@@ -44,9 +63,8 @@ export default function HistoricalChart({ orders, historicalNavs, isPrivacyMode,
         };
 
         const dataPoints = [];
-        let currentDate = new Date(firstOrderDate);
+        let currentDate = new Date(startDate);
 
-        // Pre-sort orders for faster processing
         const sortedOrders = [...orders].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
         while (currentDate <= today) {
@@ -119,12 +137,11 @@ export default function HistoricalChart({ orders, historicalNavs, isPrivacyMode,
 
                 if (data.isDeposit) {
                     data.deposits.forEach(dep => {
-                        const startDate = new Date(dep.date);
-                        const maturityDate = new Date(startDate);
+                        const startDateDep = new Date(dep.date);
+                        const maturityDate = new Date(startDateDep);
                         maturityDate.setMonth(maturityDate.getMonth() + (dep.duration || 12));
                         maturityDate.setHours(23, 59, 59, 999);
 
-                        // If current point in 'time' line has already surpassed the maturity 
                         if (time >= maturityDate.getTime()) {
                             const profit = dep.amount * ((dep.interestRate || 0) / 100) * ((dep.duration || 12) / 12);
                             totalValue += (dep.amount + profit);
@@ -132,7 +149,7 @@ export default function HistoricalChart({ orders, historicalNavs, isPrivacyMode,
                             totalValue += dep.amount;
                         }
                     });
-                    return; // exit the loop for this specific record so it doesn't try to look for NAVs
+                    return;
                 }
 
                 const dayNav = getNavForDate(fund, time);
@@ -146,42 +163,55 @@ export default function HistoricalChart({ orders, historicalNavs, isPrivacyMode,
                 }
             });
 
-            if (totalInvested > 0) {
-                dataPoints.push({
-                    date: new Date(currentDate).toLocaleDateString(undefined, { month: 'short', year: '2-digit' }),
-                    timestamp: time,
-                    invested: totalInvested,
-                    value: totalValue,
-                });
-            }
+            dataPoints.push({
+                date: new Date(currentDate).toLocaleDateString(undefined, { day: period === '1W' ? '2-digit' : undefined, month: 'short', year: '2-digit' }),
+                timestamp: time,
+                invested: totalInvested,
+                value: totalValue,
+            });
 
-            // Move to next day
             currentDate.setDate(currentDate.getDate() + 1);
         }
 
-        // To avoid freezing the browser rendering too many points, we can sample it if it's > 365
         let finalDataPoints = dataPoints;
         if (dataPoints.length > 500) {
-            // Keep roughly 200 points
             const step = Math.ceil(dataPoints.length / 200);
             finalDataPoints = dataPoints.filter((_, i) => i % step === 0 || i === dataPoints.length - 1);
         }
 
         return finalDataPoints;
-    }, [orders, historicalNavs]);
+    }, [orders, historicalNavs, period]);
 
     if (!historicalNavs || Object.keys(historicalNavs).length === 0 || chartData.length === 0) {
         return null;
     }
 
-    // Determine Y-axis domain based on data to make it zoom in a bit
     const minValue = Math.min(...chartData.map(d => Math.min(d.invested, d.value)));
     const maxValue = Math.max(...chartData.map(d => Math.max(d.invested, d.value)));
-    const yMin = Math.max(0, minValue * 0.95); // 5% padding below
+    const yMin = Math.max(0, minValue * 0.95);
 
     return (
         <div className="card mb-8">
-            <h2 className="text-xl font-semibold mb-6">Evolución de la Cartera</h2>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                <h2 className="text-xl font-semibold">Evolución de la Cartera</h2>
+                
+                <div className="flex bg-surface p-1 rounded-lg border border-gray-800">
+                    {periods.map((p) => (
+                        <button
+                            key={p.id}
+                            onClick={() => setPeriod(p.id)}
+                            className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
+                                period === p.id 
+                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' 
+                                : 'text-gray-500 hover:text-gray-300'
+                            }`}
+                        >
+                            {p.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
             <div className="h-[350px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
@@ -245,3 +275,4 @@ export default function HistoricalChart({ orders, historicalNavs, isPrivacyMode,
         </div>
     );
 }
+

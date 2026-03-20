@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Trash2, AlertTriangle, Save, Download, Upload } from 'lucide-react';
 
-export default function Settings({ onClearData, onRestoreData, onExportData, onImportData, currency, setCurrency }) {
+export default function Settings({ onClearData, onRestoreData, onExportData, onImportData, currency, setCurrency, fundConfigs, setFundConfigs }) {
     const [confirmClear, setConfirmClear] = useState(false);
 
     const handleClear = () => {
@@ -36,6 +36,89 @@ export default function Settings({ onClearData, onRestoreData, onExportData, onI
                             <option value="USD">USD ($)</option>
                             <option value="EUR">EUR (€)</option>
                         </select>
+                    </div>
+                </div>
+
+                <div className="card">
+                    <div className="flex items-center justify-between mb-6">
+                        <h2 className="text-xl font-semibold text-white">Gestión de Mis Fondos</h2>
+                        <div className="text-xs font-bold px-2 py-1 bg-blue-500/10 text-blue-400 rounded border border-blue-500/20">
+                            TOTAL OBJETIVO: {Object.values(fundConfigs || {}).reduce((sum, f) => sum + (parseFloat(f.targetPercent) || 0), 0).toFixed(0)}%
+                        </div>
+                    </div>
+                    
+                    <p className="text-sm text-gray-400 mb-6">
+                        Configura los fondos de tu portfolio para habilitar el seguimiento de precios real y los cálculos de rebalanceo.
+                    </p>
+
+                    <div className="space-y-4">
+                        {Object.entries(fundConfigs || {}).map(([name, config]) => (
+                            <div key={name} className="p-4 bg-surface border border-gray-800 rounded-xl">
+                                <div className="flex flex-col md:flex-row md:items-center gap-4">
+                                    <div className="flex-1">
+                                        <div className="text-sm font-bold text-white mb-1">{name}</div>
+                                        <div className="text-[10px] text-gray-500 uppercase tracking-wider">Configuración del Activo</div>
+                                    </div>
+                                    
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 w-full md:w-auto mt-2 md:mt-0">
+                                        <div className="flex flex-col gap-1">
+                                            <label className="text-[10px] text-gray-500 font-bold uppercase">ID Morningstar</label>
+                                            <input 
+                                                type="text" 
+                                                className="bg-background border border-gray-700 rounded px-2 py-1.5 text-xs text-white focus:border-blue-500 outline-none w-full md:w-28 font-mono"
+                                                placeholder="F0GBR06OZK"
+                                                value={config.morningstarId || ''}
+                                                onChange={(e) => {
+                                                    const newConfigs = { ...fundConfigs };
+                                                    newConfigs[name] = { ...newConfigs[name], morningstarId: e.target.value.trim().toUpperCase() };
+                                                    setFundConfigs(newConfigs);
+                                                }}
+                                            />
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <label className="text-[10px] text-gray-500 font-bold uppercase">% Objetivo</label>
+                                            <div className="relative">
+                                                <input 
+                                                    type="number" 
+                                                    className="bg-background border border-gray-700 rounded px-2 py-1.5 text-xs text-white focus:border-blue-500 outline-none w-full md:w-20 pr-6"
+                                                    placeholder="0"
+                                                    value={config.targetPercent || ''}
+                                                    onChange={(e) => {
+                                                        const newConfigs = { ...fundConfigs };
+                                                        newConfigs[name] = { ...newConfigs[name], targetPercent: parseFloat(e.target.value) || 0 };
+                                                        setFundConfigs(newConfigs);
+                                                    }}
+                                                />
+                                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-gray-500 font-bold">%</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <label className="text-[10px] text-amber-500/70 font-bold uppercase" title="Total Expense Ratio (Gastos Anuales)">Comisión TER</label>
+                                            <div className="relative">
+                                                <input 
+                                                    type="number" 
+                                                    step="0.01"
+                                                    className="bg-background border border-gray-700 rounded px-2 py-1.5 text-xs text-amber-100 focus:border-amber-500 outline-none w-full md:w-20 pr-6"
+                                                    placeholder="0.20"
+                                                    value={config.ter || ''}
+                                                    onChange={(e) => {
+                                                        const newConfigs = { ...fundConfigs };
+                                                        newConfigs[name] = { ...newConfigs[name], ter: parseFloat(e.target.value) || 0 };
+                                                        setFundConfigs(newConfigs);
+                                                    }}
+                                                />
+                                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-amber-500/50 font-bold">%</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    
+                    <div className="mt-6 p-3 bg-amber-500/5 border border-amber-500/20 rounded-lg text-[11px] text-amber-200/70">
+                        💡 <strong>Tip:</strong> Puedes encontrar el ID de Morningstar en la URL de morningstar.es (ej: ?id=<strong>F0GBR06OZK</strong>). 
+                        El sistema lo usará para obtener el NAV histórico automáticamente.
                     </div>
                 </div>
 

@@ -1,9 +1,9 @@
 import React from 'react';
-import { Wallet, PieChart as PieChartIcon, ArrowRightLeft, TrendingUp, TrendingDown } from 'lucide-react';
+import { Wallet, PieChart as PieChartIcon, ArrowRightLeft, TrendingUp, TrendingDown, Target, Info } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, LineChart, Line, YAxis } from 'recharts';
-import { getMatchingFundKey } from '../utils/helpers';
+import { getMatchingFundKey, calculateMWR, calculateTWR } from '../utils/helpers';
 
-export default function Portfolio({ orders, currentNavs, historicalNavs, janNavs, currentHoldings, totalCarteraValorada, isPrivacyMode, formatCurrency }) {
+export default function Portfolio({ orders, currentNavs, historicalNavs, janNavs, currentHoldings, totalCarteraValorada, isPrivacyMode, formatCurrency, fundConfigs = {} }) {
     // Process holdings into rich asset allocation data
     const activeHoldings = Object.entries(currentHoldings || {})
         .filter(([_, data]) => data.shares > 0 || data.invested !== 0)
@@ -14,11 +14,17 @@ export default function Portfolio({ orders, currentNavs, historicalNavs, janNavs
                 data.deposits.forEach(dep => {
                     const startDate = new Date(dep.date);
                     const maturityDate = new Date(startDate);
-                    maturityDate.setMonth(maturityDate.getMonth() + (dep.duration || 12));
+                    const duration = dep.duration || dep.duration_months || 12;
+                    // Support multiple interest rate property names
+                    const rate = dep.interestRate !== undefined ? dep.interestRate : 
+                               (dep.interestrate !== undefined ? dep.interestrate : 
+                               (dep.interest_rate !== undefined ? dep.interest_rate : 0));
+
+                    maturityDate.setMonth(maturityDate.getMonth() + duration);
                     maturityDate.setHours(23, 59, 59, 999);
 
                     if (new Date() >= maturityDate) {
-                        const profit = dep.amount * ((dep.interestRate || 0) / 100) * ((dep.duration || 12) / 12);
+                        const profit = dep.amount * (parseFloat(rate) / 100) * (duration / 12);
                         maturedProfits += profit;
                         currentValorado += (dep.amount + profit);
                     } else {
@@ -26,9 +32,19 @@ export default function Portfolio({ orders, currentNavs, historicalNavs, janNavs
                     }
                 });
 
-                const totalProfitPct = data.invested > 0 ? (maturedProfits / data.invested) * 100 : 0;
-                const targetPercent = 50.00;
+                let totalInterestRate = 0;
+                if (data.deposits && data.deposits.length > 0) {
+                    totalInterestRate = data.deposits.reduce((acc, d) => {
+                        const rate = d.interestRate !== undefined ? d.interestRate : 
+                                   (d.interestrate !== undefined ? d.interestrate : 
+                                   (d.interest_rate !== undefined ? d.interest_rate : 0));
+                        return acc + (parseFloat(rate) || 0);
+                    }, 0) / data.deposits.length;
+                }
+
                 const currentPercent = totalCarteraValorada > 0 ? (currentValorado / totalCarteraValorada) * 100 : 0;
+                const config = fundConfigs[fundName] || {};
+                const targetPercent = config.targetPercent || 0;
 
                 return {
                     fundName: `🏦 ${fundName}`,
@@ -40,10 +56,15 @@ export default function Portfolio({ orders, currentNavs, historicalNavs, janNavs
                     targetPercent,
                     deviation: currentPercent - targetPercent,
                     rebalanceAmount: (totalCarteraValorada * (targetPercent / 100)) - currentValorado,
-                    totalProfitPct,
-                    annualReturn: totalProfitPct,
-                    ytdReturn: 0,
-                    sparklineData: []
+                    totalProfitPct: (data.invested > 0 ? (maturedProfits / data.invested) * 100 : 0),
+                    annualReturn: totalInterestRate, 
+                    twrTotal: (data.invested > 0 ? (maturedProfits / data.invested) * 100 : 0),
+                    twrAnnual: totalInterestRate,
+                    mwrAnnual: totalInterestRate,
+                    ytdReturn: totalInterestRate, 
+                    sparklineData: [],
+                    ter: 0,
+                    terCost: 0
                 };
             }
 
@@ -68,23 +89,16 @@ export default function Portfolio({ orders, currentNavs, historicalNavs, janNavs
             const firstNav = firstOrder.nav || (data.invested / data.shares);
             const totalProfitPct = data.invested > 0 ? ((currentValorado / data.invested) - 1) * 100 : 0;
 
-            // Rentabilidad Anualizada del ACTIVO (NAV CAGR)
-            // Independiente de la cantidad: ¿Cuánto ha crecido el fondo por año desde mi primera compra?
             const now = new Date();
             const totalDaysSinceStart = (now - new Date(firstOrder.date)) / (1000 * 60 * 60 * 24);
             const totalYearsSinceStart = totalDaysSinceStart / 365.25;
 
-            let annualReturn = 0;
-            if (totalYearsSinceStart > 0 && firstNav > 0) {
-                // (NAV_Actual / NAV_Inicial) ^ (1 / Años_Totales) - 1
-                annualReturn = (Math.pow(nav / firstNav, 1 / totalYearsSinceStart) - 1) * 100;
-            }
-
             // Rentabilidad Year-to-Date (YTD)
             const ytdReturn = janNav > 0 ? ((nav / janNav) - 1) * 100 : 0;
 
-            // Hardcoded 50% target allocation for MVP
-            const targetPercent = 50.00;
+            // Dynamic target allocation from configs
+            const config = fundConfigs[fundName] || {};
+            const targetPercent = config.targetPercent || 0;
             const currentPercent = totalCarteraValorada > 0 ? (currentValorado / totalCarteraValorada) * 100 : 0;
 
             const deviation = currentPercent - targetPercent;
@@ -95,9 +109,17 @@ export default function Portfolio({ orders, currentNavs, historicalNavs, janNavs
             const sparklineData = [];
             if (historicalNavs && historicalNavs[matchKey]) {
                 const navsArr = historicalNavs[matchKey];
-                // Tomar los últimos 60 días para un gráfico suave
                 const recent = navsArr.slice(-60);
                 recent.forEach(([ts, n]) => sparklineData.push({ nav: n, time: ts }));
+            }
+
+            // TWR & MWR Calculations
+            const twrTotal = calculateTWR(firstNav, nav);
+            const mwrAnnual = calculateMWR(fundOrders, currentValorado);
+            
+            let twrAnnual = 0;
+            if (totalYearsSinceStart > 0 && (1 + twrTotal/100) > 0) {
+                twrAnnual = (Math.pow(1 + twrTotal/100, 1 / totalYearsSinceStart) - 1) * 100;
             }
 
             return {
@@ -111,12 +133,22 @@ export default function Portfolio({ orders, currentNavs, historicalNavs, janNavs
                 deviation,
                 rebalanceAmount,
                 totalProfitPct,
-                annualReturn,
+                annualReturn: twrAnnual, 
+                firstBuyNav: firstNav,
+                firstOrderDate: firstOrder.date,
+                twrTotal,
+                twrAnnual,
+                mwrAnnual,
                 ytdReturn,
-                sparklineData
+                sparklineData,
+                ter: config.ter || 0,
+                terCost: currentValorado * ((config.ter || 0) / 100)
             };
         })
         .sort((a, b) => b.currentValorado - a.currentValorado);
+
+    const totalTerCost = activeHoldings.reduce((sum, h) => sum + (h.terCost || 0), 0);
+    const averageTer = totalCarteraValorada > 0 ? (totalTerCost / totalCarteraValorada) * 100 : 0;
 
     // Prepare data for Recharts
     const chartData = activeHoldings.map(h => ({
@@ -179,9 +211,29 @@ export default function Portfolio({ orders, currentNavs, historicalNavs, janNavs
                 <div className="flex flex-col justify-center">
                     <h2 className="text-xl font-semibold mb-2">Resumen de Asignación</h2>
                     <p className="text-gray-400 mb-6">Esta visualización está basada en los precios de mercado actuales (NAV). Usa el dashboard para actualizarlos periódicamente.</p>
-                    <div className="p-4 bg-primary/10 border border-primary/20 rounded-lg">
-                        <div className="text-sm text-primary mb-1">Cartera Valorada Total</div>
-                        <div className="text-3xl font-bold text-white">{formatCurrency(totalCarteraValorada)}</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="p-4 bg-primary/10 border border-primary/20 rounded-lg">
+                            <div className="text-[10px] text-primary/70 uppercase font-bold mb-1">Cartera Valorada Total</div>
+                            <div className="text-2xl font-bold text-white">{formatCurrency(totalCarteraValorada)}</div>
+                        </div>
+                        {(() => {
+                            const totalTarget = activeHoldings.reduce((sum, h) => sum + h.targetPercent, 0);
+                            const isBalanced = Math.abs(totalTarget - 100) < 0.1;
+                            return (
+                                <div className={`p-4 border rounded-lg ${isBalanced ? 'bg-green-500/10 border-green-500/20' : 'bg-amber-500/10 border-amber-500/20'}`}>
+                                    <div className={`text-[10px] uppercase font-bold mb-1 ${isBalanced ? 'text-green-400' : 'text-amber-400'}`}>Objetivo Total</div>
+                                    <div className="text-2xl font-bold text-white">{totalTarget.toFixed(0)}%</div>
+                                    {!isBalanced && activeHoldings.length > 0 && <div className="text-[10px] text-amber-500 font-bold mt-1">⚠️ AJUSTA AL 100% EN SETTINGS</div>}
+                                </div>
+                            );
+                        })()}
+                        
+                        <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-lg sm:col-span-2">
+                            <div className="text-[10px] text-amber-500/80 uppercase font-bold mb-1">Comisiones de Gestión (TER Promedio: {averageTer.toFixed(2)}%)</div>
+                            <div className="text-xl font-bold text-amber-400/90 hover:text-amber-400 transition-colors cursor-help" title="Esto es lo que cobran anualmente las gestoras (Amundi, Vanguard, etc.) por administrar tus fondos.">
+                                {isPrivacyMode ? 'XXXX' : formatCurrency(totalTerCost)} <span className="text-sm font-normal text-amber-500/50">/ año</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -190,29 +242,68 @@ export default function Portfolio({ orders, currentNavs, historicalNavs, janNavs
             <div className="card overflow-x-auto p-0 border border-gray-800">
                 <table className="w-full text-left border-collapse">
                     <thead>
-                        <tr className="bg-surface text-gray-400 text-sm border-b border-gray-800">
-                            <th className="p-4 font-medium">Fondo</th>
-                            <th className="p-4 font-medium text-right">Valorado</th>
-                            <th className="p-4 font-medium text-center">YTD (2026)</th>
-                            <th className="p-4 font-medium text-center">Evolución</th>
-                            <th className="p-4 font-medium text-center">Rent. Total</th>
-                            <th className="p-4 font-medium text-center">Rent. Anual</th>
-                            <th className="p-4 font-medium text-center">Actual %</th>
-                            <th className="p-4 font-medium text-right">Rebalanceo</th>
+                        <tr className="bg-surface text-gray-400 text-[10px] uppercase tracking-wider border-b border-gray-800">
+                            <th className="px-3 py-4 font-bold">Fondo</th>
+                            <th className="px-3 py-4 font-bold text-right">Valorado</th>
+                            <th className="px-3 py-4 font-bold text-center">YTD</th>
+                            <th className="px-3 py-4 font-bold text-center">Evol.</th>
+                            <th className="px-3 py-4 font-bold text-center">
+                                <div className="flex items-center justify-center gap-1">
+                                    TWR 1ª Compra <Info size={10} className="text-gray-600" title="Rentabilidad de tu primera aportación" />
+                                </div>
+                            </th>
+                            <th className="px-3 py-4 font-bold text-center">
+                                <div className="flex items-center justify-center gap-1">
+                                    TWR <Info size={10} className="text-gray-600" title="Rentabilidad del activo" />
+                                </div>
+                            </th>
+                            <th className="px-3 py-4 font-bold text-center">TWR Anual</th>
+                            <th className="px-3 py-4 font-bold text-center">
+                                <div className="flex items-center justify-center gap-1">
+                                    MWR <Info size={10} className="text-gray-600" title="Tu rentabilidad real anualizada" />
+                                </div>
+                            </th>
+                            <th className="px-3 py-4 font-bold text-center">
+                                <div className="flex items-center justify-center gap-1">
+                                    TER <Info size={10} className="text-amber-600/50" title="Coste anual de gestión" />
+                                </div>
+                            </th>
+                            <th className="px-3 py-4 font-bold text-center">Actual %</th>
+                            <th className="px-3 py-4 font-bold text-right">Rebalanceo</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="text-xs">
                         {activeHoldings.map((h, index) => {
                             const isOverweight = h.deviation > 0;
                             const isProfitPositive = h.totalProfitPct >= 0;
+                            
+                            // Calculate performance of first buy order specifically
+                            let firstBuyReturn = null;
+                            if (h.firstBuyNav && h.nav > 0) {
+                                const rawReturn = (h.nav / h.firstBuyNav) - 1;
+                                
+                                // Annualize it if the holding period is more than 30 days (make it comparable)
+                                if (h.firstOrderDate) {
+                                    const yearsSinceFirstBuy = (new Date() - new Date(h.firstOrderDate)) / (1000 * 60 * 60 * 24 * 365.25);
+                                    if (yearsSinceFirstBuy > 0 && (1 + rawReturn) > 0) {
+                                        firstBuyReturn = (Math.pow(1 + rawReturn, 1 / yearsSinceFirstBuy) - 1) * 100;
+                                    } else {
+                                        firstBuyReturn = rawReturn * 100;
+                                    }
+                                } else {
+                                    firstBuyReturn = rawReturn * 100; // fallback just in case
+                                }
+                            }
                             return (
                                 <tr key={h.fundName} className={`border-b border-gray-800/50 hover:bg-gray-800/20 transition-colors ${index === activeHoldings.length - 1 ? 'border-b-0' : ''}`}>
-                                    <td className="p-4 font-medium text-white max-w-[180px] truncate" title={h.fundName}>
-                                        {h.fundName}
+                                    <td className="p-3 font-medium text-white whitespace-normal max-w-[180px]" title={h.fundName}>
+                                        <div className="leading-tight line-clamp-2">
+                                            {h.fundName}
+                                        </div>
                                     </td>
-                                    <td className="p-4 text-right">
+                                    <td className="p-3 text-right">
                                         <div className="text-white font-semibold">{formatCurrency(h.currentValorado)}</div>
-                                        <div className="text-[10px] text-gray-500">Coste: {formatCurrency(h.invested)}</div>
+                                        <div className="text-[9px] text-gray-500">Coste: {formatCurrency(h.invested)}</div>
                                     </td>
                                     <td className="p-4 text-center">
                                         <div className={`inline-flex items-center px-2 py-1 rounded bg-blue-500/10 font-bold ${h.ytdReturn >= 0 ? 'text-blue-400' : 'text-danger'}`}>
@@ -240,24 +331,50 @@ export default function Portfolio({ orders, currentNavs, historicalNavs, janNavs
                                             <span className="text-gray-600 text-xs">-</span>
                                         )}
                                     </td>
-                                    <td className="p-4 text-center">
-                                        <div className={`inline-flex items-center font-bold ${isProfitPositive ? 'text-green-400' : 'text-danger'}`}>
-                                            {isPrivacyMode ? 'XX.X%' : `${isProfitPositive ? '+' : ''}${h.totalProfitPct.toFixed(2)}%`}
+                                    <td className="p-3 text-center">
+                                        <div className={`flex flex-col items-center font-bold ${firstBuyReturn !== null ? (firstBuyReturn >= 0 ? 'text-green-400' : 'text-danger') : 'text-gray-600'}`}>
+                                            <span className="text-[9px] uppercase text-gray-600 font-semibold">Compra 1</span>
+                                            {isPrivacyMode ? 'XX.X%' : (firstBuyReturn !== null ? `${firstBuyReturn >= 0 ? '+' : ''}${firstBuyReturn.toFixed(2)}%` : '-')}
                                         </div>
                                     </td>
-                                    <td className="p-4 text-center">
-                                        <div className={`px-2 py-1 rounded bg-gray-900/50 text-xs font-mono ${h.annualReturn >= 0 ? 'text-green-400' : 'text-danger'}`}>
-                                            {isPrivacyMode ? 'XX.X%' : (h.nav === 0 ? `${h.annualReturn.toFixed(2)}% (TAE)` : `${h.annualReturn.toFixed(2)}% / año`)}
+                                    <td className="p-3 text-center">
+                                        <div className={`flex flex-col items-center font-bold ${h.twrTotal >= 0 ? 'text-green-400' : 'text-danger'}`}>
+                                            <span className="text-[9px] uppercase text-gray-600 font-semibold">Total</span>
+                                            {isPrivacyMode ? 'XX.X%' : `${h.twrTotal >= 0 ? '+' : ''}${h.twrTotal.toFixed(2)}%`}
                                         </div>
                                     </td>
-                                    <td className="p-4 text-center">
-                                        <div className="inline-block px-2 py-1 rounded-md bg-gray-800 text-sm font-medium">
+                                    <td className="p-3 text-center">
+                                        <div className={`flex flex-col items-center font-bold ${h.twrAnnual >= 0 ? 'text-green-400' : 'text-danger'}`}>
+                                            <span className="text-[9px] uppercase text-gray-600 font-semibold">Anual</span>
+                                            {isPrivacyMode ? 'XX.X%' : `${h.twrAnnual >= 0 ? '+' : ''}${h.twrAnnual.toFixed(2)}%`}
+                                        </div>
+                                    </td>
+                                    <td className="p-3 text-center">
+                                        <div className={`px-1.5 py-1 rounded bg-indigo-500/5 border border-indigo-500/10 flex flex-col items-center font-bold ${h.mwrAnnual >= 0 ? 'text-indigo-400' : 'text-danger'}`}>
+                                            <span className="text-[8px] uppercase text-indigo-500/50 font-bold">Real</span>
+                                            {isPrivacyMode ? 'XX.X%' : `${h.mwrAnnual >= 0 ? '+' : ''}${h.mwrAnnual.toFixed(2)}%`}
+                                        </div>
+                                    </td>
+                                    <td className="p-3 text-center">
+                                        <div className="flex flex-col items-center text-amber-400/80 font-medium">
+                                            {h.ter > 0 ? (
+                                                <>
+                                                    <span>{h.ter.toFixed(2)}%</span>
+                                                    <span className="text-[9px] text-amber-500/40">~{isPrivacyMode ? 'XX€' : formatCurrency(h.terCost)}/a</span>
+                                                </>
+                                            ) : (
+                                                <span className="text-gray-600">-</span>
+                                            )}
+                                        </div>
+                                    </td>
+                                    <td className="p-3 text-center">
+                                        <div className="inline-block px-1.5 py-0.5 rounded-md bg-gray-800 text-xs font-medium">
                                             {h.currentPercent.toFixed(1)}%
                                         </div>
                                     </td>
-                                    <td className="p-4 text-right">
-                                        <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium ${h.rebalanceAmount > 0 ? 'bg-success/10 text-success border border-success/20' : 'bg-danger/10 text-danger border border-danger/20'}`}>
-                                            <ArrowRightLeft size={14} />
+                                    <td className="p-3 text-right">
+                                        <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${h.rebalanceAmount > 0 ? 'bg-success/10 text-success border border-success/20' : 'bg-danger/10 text-danger border border-danger/20'}`}>
+                                            <ArrowRightLeft size={12} />
                                             {isPrivacyMode ? 'XXXX' : `${h.rebalanceAmount > 0 ? '+' : ''}${formatCurrency(h.rebalanceAmount)}`}
                                         </div>
                                     </td>
