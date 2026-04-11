@@ -1,10 +1,32 @@
 import React from 'react';
-import { Wallet, PieChart as PieChartIcon, ArrowRightLeft, TrendingUp, TrendingDown, Target, Info } from 'lucide-react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, LineChart, Line, YAxis } from 'recharts';
+import { Wallet, PieChart as PieChartIcon, ArrowRightLeft, TrendingUp, TrendingDown, Target, Info, Landmark, Coins, ShieldCheck, Activity, PiggyBank } from 'lucide-react';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, LineChart, Line, YAxis, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
 import { getMatchingFundKey, calculateMWR, calculateTWR } from '../utils/helpers';
 
+// Helper to guess asset class from name if not provided
+const guessAssetClass = (name) => {
+    if (!name) return 'renta-variable';
+    const normalized = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (normalized.includes('tresorerie') || normalized.includes('monetario') || normalized.includes('liquidez') || normalized.includes('money market') || normalized.includes('treasury') || normalized.includes('cash')) return 'monetario';
+    if (normalized.includes('bono') || normalized.includes('renta fija') || normalized.includes('deuda') || normalized.includes('fixed income') || normalized.includes('bond')) return 'renta-fija';
+    if (normalized.includes('deposito')) return 'deposito';
+    return 'renta-variable';
+};
+
+// Ultra minimal tooltip
+const CustomTooltip = ({ active, payload, formatCurrency }) => {
+    if (active && payload && payload.length) {
+        return (
+            <div className="bg-white border border-slate-200/60 shadow-xl rounded-xl px-4 py-3">
+                <p className="text-slate-500 text-xs font-medium mb-1">{payload[0].name}</p>
+                <p className="text-slate-900 font-bold font-mono text-sm">{formatCurrency(payload[0].value)}</p>
+            </div>
+        );
+    }
+    return null;
+};
+
 export default function Portfolio({ orders, currentNavs, historicalNavs, janNavs, currentHoldings, totalCarteraValorada, isPrivacyMode, formatCurrency, fundConfigs = {} }) {
-    // Process holdings into rich asset allocation data
     const activeHoldings = Object.entries(currentHoldings || {})
         .filter(([_, data]) => data.shares > 0 || data.invested !== 0)
         .map(([fundName, data]) => {
@@ -15,7 +37,6 @@ export default function Portfolio({ orders, currentNavs, historicalNavs, janNavs
                     const startDate = new Date(dep.date);
                     const maturityDate = new Date(startDate);
                     const duration = dep.duration || dep.duration_months || 12;
-                    // Support multiple interest rate property names
                     const rate = dep.interestRate !== undefined ? dep.interestRate : 
                                (dep.interestrate !== undefined ? dep.interestrate : 
                                (dep.interest_rate !== undefined ? dep.interest_rate : 0));
@@ -47,13 +68,9 @@ export default function Portfolio({ orders, currentNavs, historicalNavs, janNavs
                 const targetPercent = config.targetPercent || 0;
 
                 return {
-                    fundName: `🏦 ${fundName}`,
-                    shares: 0,
-                    invested: data.invested,
-                    nav: 0,
-                    currentValorado,
-                    currentPercent,
-                    targetPercent,
+                    fundName: `DEP: ${fundName}`, broker: data.broker || 'ING', assetClass: config.assetClass || 'deposito',
+                    shares: 0, invested: data.invested, nav: 0,
+                    currentValorado, currentPercent, targetPercent,
                     deviation: currentPercent - targetPercent,
                     rebalanceAmount: (totalCarteraValorada * (targetPercent / 100)) - currentValorado,
                     totalProfitPct: (data.invested > 0 ? (maturedProfits / data.invested) * 100 : 0),
@@ -63,8 +80,7 @@ export default function Portfolio({ orders, currentNavs, historicalNavs, janNavs
                     mwrAnnual: totalInterestRate,
                     ytdReturn: totalInterestRate, 
                     sparklineData: [],
-                    ter: 0,
-                    terCost: 0
+                    ter: 0, terCost: 0
                 };
             }
 
@@ -78,7 +94,6 @@ export default function Portfolio({ orders, currentNavs, historicalNavs, janNavs
                 currentValorado = data.invested;
             }
 
-            // Filtramos y ordenamos órdenes de este fondo (más antigua primero)
             const fundOrders = (orders || [])
                 .filter(o => o.fundName === fundName)
                 .sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -87,33 +102,27 @@ export default function Portfolio({ orders, currentNavs, historicalNavs, janNavs
 
             const firstOrder = fundOrders[0];
             const firstNav = firstOrder.nav || (data.invested / data.shares);
-            const totalProfitPct = data.invested > 0 ? ((currentValorado / data.invested) - 1) * 100 : 0;
 
             const now = new Date();
             const totalDaysSinceStart = (now - new Date(firstOrder.date)) / (1000 * 60 * 60 * 24);
             const totalYearsSinceStart = totalDaysSinceStart / 365.25;
 
-            // Rentabilidad Year-to-Date (YTD)
             const ytdReturn = janNav > 0 ? ((nav / janNav) - 1) * 100 : 0;
+            const totalProfitPct = data.invested > 0 ? ((currentValorado / data.invested) - 1) * 100 : 0;
 
-            // Dynamic target allocation from configs
             const config = fundConfigs[fundName] || {};
             const targetPercent = config.targetPercent || 0;
             const currentPercent = totalCarteraValorada > 0 ? (currentValorado / totalCarteraValorada) * 100 : 0;
 
-            const deviation = currentPercent - targetPercent;
             const targetValuation = totalCarteraValorada * (targetPercent / 100);
-            const rebalanceAmount = targetValuation - currentValorado;
 
-            // Prepare sparkline data 
             const sparklineData = [];
             if (historicalNavs && historicalNavs[matchKey]) {
                 const navsArr = historicalNavs[matchKey];
                 const recent = navsArr.slice(-60);
-                recent.forEach(([ts, n]) => sparklineData.push({ nav: n, time: ts }));
+                recent.forEach(([ts, n]) => sparklineData.push({ nav: parseFloat(n), time: ts }));
             }
 
-            // TWR & MWR Calculations
             const twrTotal = calculateTWR(firstNav, nav);
             const mwrAnnual = calculateMWR(fundOrders, currentValorado);
             
@@ -123,26 +132,14 @@ export default function Portfolio({ orders, currentNavs, historicalNavs, janNavs
             }
 
             return {
-                fundName,
-                shares: data.shares,
-                invested: data.invested,
-                nav,
-                currentValorado,
-                currentPercent,
-                targetPercent,
-                deviation,
-                rebalanceAmount,
-                totalProfitPct,
-                annualReturn: twrAnnual, 
-                firstBuyNav: firstNav,
+                fundName, broker: data.broker || 'MyInvestor', assetClass: config.assetClass || guessAssetClass(fundName), shares: data.shares, invested: data.invested, nav,
+                currentValorado, currentPercent, targetPercent, 
+                deviation: currentPercent - targetPercent, 
+                rebalanceAmount: targetValuation - currentValorado,
+                totalProfitPct, annualReturn: twrAnnual, firstBuyNav: firstNav,
                 firstOrderDate: firstOrder.date,
-                twrTotal,
-                twrAnnual,
-                mwrAnnual,
-                ytdReturn,
-                sparklineData,
-                ter: config.ter || 0,
-                terCost: currentValorado * ((config.ter || 0) / 100)
+                twrTotal, twrAnnual, mwrAnnual, ytdReturn, sparklineData,
+                ter: config.ter || 0, terCost: currentValorado * ((config.ter || 0) / 100)
             };
         })
         .sort((a, b) => b.currentValorado - a.currentValorado);
@@ -150,232 +147,286 @@ export default function Portfolio({ orders, currentNavs, historicalNavs, janNavs
     const totalTerCost = activeHoldings.reduce((sum, h) => sum + (h.terCost || 0), 0);
     const averageTer = totalCarteraValorada > 0 ? (totalTerCost / totalCarteraValorada) * 100 : 0;
 
-    // Prepare data for Recharts
-    const chartData = activeHoldings.map(h => ({
-        name: h.fundName,
-        value: h.currentValorado,
-    }));
+    const totalInvestedGlobal = activeHoldings.reduce((sum, h) => sum + h.invested, 0);
+    const globalTwrRough = totalInvestedGlobal > 0 ? ((totalCarteraValorada / totalInvestedGlobal) - 1) * 100 : 0;
+    const deviationScore = activeHoldings.reduce((sum, h) => sum + Math.abs(h.deviation), 0);
+    
+    // Weighted safety: 100% for cash/monetary/deposits, 70% for bonds/fixed income
+    const weightedSafety = activeHoldings.reduce((sum, h) => {
+        if (h.assetClass === 'deposito' || h.assetClass === 'monetario') {
+            return sum + h.currentPercent;
+        } else if (h.assetClass === 'renta-fija') {
+            return sum + (h.currentPercent * 0.7);
+        }
+        return sum;
+    }, 0);
 
-    // Color palette for the chart
-    const COLORS = ['#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '#8b5cf6'];
+    const healthData = [
+        { subject: 'Eficiencia', A: Math.max(0, 100 - (averageTer * 120)), fullMark: 100 },
+        { subject: 'Rendimiento', A: Math.max(0, Math.min(100, 15 + (globalTwrRough * 3.4))), fullMark: 100 },
+        { subject: 'Diversidad', A: Math.min(100, activeHoldings.length * 15 + 25), fullMark: 100 },
+        { subject: 'Seguridad', A: Math.min(100, (weightedSafety > 98 ? 100 : weightedSafety * 0.8 + 20)), fullMark: 100 },
+        { subject: 'Disciplina', A: Math.max(0, 100 - (deviationScore * 1.5)), fullMark: 100 }
+    ];
+
+    const ASSET_PALETTES = {
+        'renta-variable': ['#10b981', '#059669', '#34d399', '#047857', '#6ee7b7'],
+        'renta-fija':     ['#6366f1', '#4f46e5', '#818cf8', '#4338ca', '#a5b4fc'],
+        'monetario':      ['#06b6d4', '#0891b2', '#22d3ee', '#0e7490', '#67e8f9'],
+        'deposito':       ['#f59e0b', '#d97706', '#fbbf24', '#b45309', '#fcd34d']
+    };
+    const colorIndexes = { 'renta-variable': 0, 'renta-fija': 0, 'monetario': 0, 'deposito': 0 };
+
+    const chartData = activeHoldings.map(h => {
+        const cls = h.assetClass || 'renta-variable';
+        const palette = ASSET_PALETTES[cls] || ASSET_PALETTES['renta-variable'];
+        const fillColor = palette[colorIndexes[cls] % palette.length];
+        colorIndexes[cls]++;
+
+        return {
+            name: h.fundName,
+            value: h.currentValorado,
+            assetClass: cls,
+            fillColor
+        };
+    });
+
+    const RADIAN = Math.PI / 180;
+    const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, payload }) => {
+        if (percent < 0.05) return null;
+        const radius = innerRadius + (outerRadius - innerRadius) * 1.7;
+        const x = cx + radius * Math.cos(-midAngle * RADIAN);
+        const y = cy + radius * Math.sin(-midAngle * RADIAN);
+
+        let IconDef = Activity;
+        let ringColor = 'border-emerald-500/30';
+        
+        if (payload.assetClass === 'monetario') { IconDef = Coins; ringColor = 'border-cyan-500/30'; }
+        else if (payload.assetClass === 'renta-fija') { IconDef = ShieldCheck; ringColor = 'border-indigo-500/30'; }
+        else if (payload.assetClass === 'deposito') { IconDef = PiggyBank; ringColor = 'border-amber-500/30'; }
+
+        return (
+            <foreignObject x={x - 14} y={y - 14} width={28} height={28} className="overflow-visible pointer-events-none">
+                <div className={`w-full h-full bg-[#0b1120]/80 backdrop-blur-sm rounded-full flex items-center justify-center border shadow-xl ${ringColor}`}>
+                    <IconDef size={14} color={payload.fillColor} strokeWidth={2.5} />
+                </div>
+            </foreignObject>
+        );
+    };
 
     if (activeHoldings.length === 0) {
         return (
-            <div className="max-w-4xl mx-auto">
-                <header className="mb-8">
-                    <h1 className="text-3xl font-bold mb-2">Mi Portfolio</h1>
-                    <div className="text-gray-400">Desglose de tus inversiones actuales.</div>
-                </header>
-                <div className="card text-center py-16">
-                    <Wallet className="w-12 h-12 mx-auto text-gray-600 mb-4" />
-                    <div className="text-gray-400 text-lg mb-2">Tu portfolio está vacío</div>
-                    <p className="text-sm text-gray-500">Realiza una compra desde el Dashboard para comenzar.</p>
-                </div>
+            <div className="w-full flex-1 flex flex-col items-center justify-center min-h-[50vh] animate-fade-in-up">
+                <Wallet className="w-12 h-12 text-slate-300 mb-6" />
+                <div className="text-slate-500 text-lg mb-2 font-mono">SIN_ASIGNACIONES_ACTIVAS</div>
+                <p className="text-[10px] text-slate-400 uppercase tracking-widest">Esperando entrada de operaciones</p>
             </div>
         );
     }
 
     return (
-        <div className="max-w-5xl mx-auto">
-            <header className="mb-8">
-                <h1 className="text-3xl font-bold mb-2">Mi Portfolio</h1>
-                <div className="text-gray-400">Desglose avanzado y rebalanceo de activos.</div>
+        <div className="w-full flex flex-col gap-6">
+            <header className="mb-6 flex items-center justify-between">
+                <div>
+                    <h1 className="text-2xl font-sans font-bold text-slate-900 mb-1 tracking-tight">Motor de Patrimonio</h1>
+                    <div className="text-[10px] font-mono whitespace-nowrap overflow-hidden text-ellipsis text-slate-400 tracking-[0.2em] uppercase">Distribución y Enrutamiento de Activos</div>
+                </div>
             </header>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-                <div className="card flex items-center justify-center min-h-[300px]">
-                    <ResponsiveContainer width="100%" height={300}>
-                        <PieChart>
-                            <Pie
-                                data={chartData}
-                                cx="50%"
-                                cy="50%"
-                                innerRadius={70}
-                                outerRadius={100}
-                                paddingAngle={5}
-                                dataKey="value"
-                            >
-                                {chartData.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                ))}
-                            </Pie>
-                            <Tooltip
-                                formatter={(value) => formatCurrency(value)}
-                                contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#f8fafc', borderRadius: '8px' }}
-                                itemStyle={{ color: '#f8fafc' }}
-                            />
-                            <Legend wrapperStyle={{ paddingTop: '20px' }} />
-                        </PieChart>
-                    </ResponsiveContainer>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="bento-card p-6 flex flex-col justify-center min-h-[340px]">
+                    <h2 className="text-xs font-mono text-slate-400 font-semibold uppercase tracking-widest mb-4">Distribución Actual</h2>
+                    <div className="flex-1 w-full min-h-[220px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                                <Pie
+                                    data={chartData}
+                                    cx="50%"
+                                    cy="50%"
+                                    innerRadius={55}
+                                    outerRadius={75}
+                                    paddingAngle={2}
+                                    dataKey="value"
+                                    stroke="none"
+                                    cornerRadius={4}
+                                    label={renderCustomizedLabel}
+                                    labelLine={false}
+                                >
+                                    {chartData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={entry.fillColor} />
+                                    ))}
+                                </Pie>
+                                <Tooltip content={<CustomTooltip formatCurrency={formatCurrency} />} />
+                            </PieChart>
+                        </ResponsiveContainer>
+                    </div>
                 </div>
-                <div className="flex flex-col justify-center">
-                    <h2 className="text-xl font-semibold mb-2">Resumen de Asignación</h2>
-                    <p className="text-gray-400 mb-6">Esta visualización está basada en los precios de mercado actuales (NAV). Usa el dashboard para actualizarlos periódicamente.</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="p-4 bg-primary/10 border border-primary/20 rounded-lg">
-                            <div className="text-[10px] text-primary/70 uppercase font-bold mb-1">Cartera Valorada Total</div>
-                            <div className="text-2xl font-bold text-white">{formatCurrency(totalCarteraValorada)}</div>
+
+                <div className="bento-card overflow-visible p-6 flex flex-col justify-center bg-[#0b1120] border-0 shadow-lg relative">
+                    <div className="flex items-center gap-2 mb-1">
+                        <h2 className="text-xs font-mono text-indigo-400 font-semibold uppercase tracking-widest">Portfolio Snowflake</h2>
+                        <div className="group relative">
+                            <Info size={14} className="text-slate-500 hover:text-indigo-400 cursor-help transition-colors" />
+                            <div className="hidden group-hover:block absolute z-50 left-6 top-0 w-64 p-4 bg-slate-900/95 backdrop-blur text-slate-300 text-[10px] font-mono rounded-xl shadow-2xl border border-indigo-500/30 leading-relaxed pointer-events-none">
+                                <span className="text-indigo-300 font-bold block mb-1">¿CÓMO LEER EL 'COPO DE NIEVE'?</span>
+                                Puntuación de 0 a 100 de tu cartera general en 5 áreas clave:<br/><br/>
+                                <strong className="text-white">Eficiencia:</strong> Cuanto más bajo sea el TER medio, más crece.<br/>
+                                <strong className="text-white">Rendimiento:</strong> Premia un crecimiento TWR global alto.<br/>
+                                <strong className="text-white">Diversidad:</strong> Sube si repartes capital en múltiples activos.<br/>
+                                <strong className="text-white">Seguridad:</strong> Máxima en depósitos/monetarios; ponderada (70%) en R. Fija.<br/>
+                                <strong className="text-white">Disciplina:</strong> Penaliza si te desvías de tus % Objetivo.
+                            </div>
                         </div>
+                    </div>
+                    <div className="text-[10px] text-slate-500 mb-4 font-mono leading-tight opacity-70">Posiciona el ratón sobre la 'i' para leer la leyenda.</div>
+                    <div className="flex-1 w-full min-h-[220px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <RadarChart cx="50%" cy="50%" outerRadius="75%" data={healthData}>
+                                <PolarGrid stroke="#334155" />
+                                <PolarAngleAxis dataKey="subject" tick={{ fill: '#94a3b8', fontSize: 10, fontFamily: 'monospace' }} />
+                                <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
+                                <Radar name="Salud" dataKey="A" stroke="#818cf8" fill="#818cf8" fillOpacity={0.4} />
+                            </RadarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                <div className="bento-card p-8 flex flex-col justify-center">
+                    <h2 className="text-xs font-mono text-slate-400 font-semibold uppercase tracking-widest mb-8">Resumen de Asignación</h2>
+                    
+                    <div className="space-y-8">
+                        <div>
+                            <div className="text-[10px] font-mono text-slate-500 uppercase mb-2">Valor Neto</div>
+                            <div className="text-4xl font-sans font-bold tracking-tight text-slate-900">{formatCurrency(totalCarteraValorada)}</div>
+                        </div>
+                        
                         {(() => {
                             const totalTarget = activeHoldings.reduce((sum, h) => sum + h.targetPercent, 0);
                             const isBalanced = Math.abs(totalTarget - 100) < 0.1;
                             return (
-                                <div className={`p-4 border rounded-lg ${isBalanced ? 'bg-green-500/10 border-green-500/20' : 'bg-amber-500/10 border-amber-500/20'}`}>
-                                    <div className={`text-[10px] uppercase font-bold mb-1 ${isBalanced ? 'text-green-400' : 'text-amber-400'}`}>Objetivo Total</div>
-                                    <div className="text-2xl font-bold text-white">{totalTarget.toFixed(0)}%</div>
-                                    {!isBalanced && activeHoldings.length > 0 && <div className="text-[10px] text-amber-500 font-bold mt-1">⚠️ AJUSTA AL 100% EN SETTINGS</div>}
+                                <div>
+                                    <div className={`text-[10px] font-mono font-semibold uppercase mb-2 ${isBalanced ? 'text-emerald-500' : 'text-rose-500'}`}>Peso Objetivo Total</div>
+                                    <div className="text-2xl font-sans font-semibold tracking-tight text-slate-900">{totalTarget.toFixed(0)}%</div>
+                                    {!isBalanced && activeHoldings.length > 0 && <div className="text-[9px] text-rose-500 font-mono mt-2 flex items-center gap-2"><Target size={10} /> EL OBJETIVO NO SUMA 100%</div>}
                                 </div>
                             );
                         })()}
                         
-                        <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-lg sm:col-span-2">
-                            <div className="text-[10px] text-amber-500/80 uppercase font-bold mb-1">Comisiones de Gestión (TER Promedio: {averageTer.toFixed(2)}%)</div>
-                            <div className="text-xl font-bold text-amber-400/90 hover:text-amber-400 transition-colors cursor-help" title="Esto es lo que cobran anualmente las gestoras (Amundi, Vanguard, etc.) por administrar tus fondos.">
-                                {isPrivacyMode ? 'XXXX' : formatCurrency(totalTerCost)} <span className="text-sm font-normal text-amber-500/50">/ año</span>
+                        <div className="pt-6 border-t border-slate-200/60">
+                            <div className="flex justify-between items-center text-xs">
+                                <span className="text-slate-500 font-mono uppercase">TER Promedio</span>
+                                <span className="text-slate-700 font-mono">{averageTer.toFixed(2)}%</span>
+                            </div>
+                            <div className="flex justify-between items-center text-xs mt-2">
+                                <span className="text-slate-500 font-mono uppercase">Coste Anual Est.</span>
+                                <span className="text-slate-900 font-semibold font-mono">{isPrivacyMode ? '***' : formatCurrency(totalTerCost)}</span>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <h2 className="text-xl font-semibold mb-4 mt-10">Asset Allocation & Rebalanceo</h2>
-            <div className="card overflow-x-auto p-0 border border-gray-800">
+            <div className="bento-card overflow-x-auto p-0 mt-6 lg:mt-8">
                 <table className="w-full text-left border-collapse">
                     <thead>
-                        <tr className="bg-surface text-gray-400 text-[10px] uppercase tracking-wider border-b border-gray-800">
-                            <th className="px-3 py-4 font-bold">Fondo</th>
-                            <th className="px-3 py-4 font-bold text-right">Valorado</th>
-                            <th className="px-3 py-4 font-bold text-center">YTD</th>
-                            <th className="px-3 py-4 font-bold text-center">Evol.</th>
-                            <th className="px-3 py-4 font-bold text-center">
-                                <div className="flex items-center justify-center gap-1">
-                                    TWR 1ª Compra <Info size={10} className="text-gray-600" title="Rentabilidad de tu primera aportación" />
-                                </div>
-                            </th>
-                            <th className="px-3 py-4 font-bold text-center">
-                                <div className="flex items-center justify-center gap-1">
-                                    TWR <Info size={10} className="text-gray-600" title="Rentabilidad del activo" />
-                                </div>
-                            </th>
-                            <th className="px-3 py-4 font-bold text-center">TWR Anual</th>
-                            <th className="px-3 py-4 font-bold text-center">
-                                <div className="flex items-center justify-center gap-1">
-                                    MWR <Info size={10} className="text-gray-600" title="Tu rentabilidad real anualizada" />
-                                </div>
-                            </th>
-                            <th className="px-3 py-4 font-bold text-center">
-                                <div className="flex items-center justify-center gap-1">
-                                    TER <Info size={10} className="text-amber-600/50" title="Coste anual de gestión" />
-                                </div>
-                            </th>
-                            <th className="px-3 py-4 font-bold text-center">Actual %</th>
-                            <th className="px-3 py-4 font-bold text-right">Rebalanceo</th>
+                        <tr className="text-slate-400 text-[9px] font-mono uppercase tracking-[0.1em] border-b border-slate-200/60 bg-slate-50/50">
+                            <th className="px-5 py-4 font-semibold">Activo Estratégico</th>
+                            <th className="px-5 py-4 font-semibold text-right">Valor Mercado</th>
+                            <th className="px-5 py-4 font-semibold text-center">YTD/ROI</th>
+                            <th className="px-5 py-4 font-semibold text-center flex-1 min-w-[120px]">Tendencia</th>
+                            <th className="px-5 py-4 font-semibold text-center">TWR (Anual)</th>
+                            <th className="px-5 py-4 font-semibold text-center text-slate-400">TIR (MWR)</th>
+                            <th className="px-5 py-4 font-semibold text-right">Rebalanceo</th>
                         </tr>
                     </thead>
-                    <tbody className="text-xs">
+                    <tbody className="text-sm font-mono">
                         {activeHoldings.map((h, index) => {
                             const isOverweight = h.deviation > 0;
                             const isProfitPositive = h.totalProfitPct >= 0;
                             
-                            // Calculate performance of first buy order specifically
-                            let firstBuyReturn = null;
-                            if (h.firstBuyNav && h.nav > 0) {
-                                const rawReturn = (h.nav / h.firstBuyNav) - 1;
-                                
-                                // Annualize it if the holding period is more than 30 days (make it comparable)
-                                if (h.firstOrderDate) {
-                                    const yearsSinceFirstBuy = (new Date() - new Date(h.firstOrderDate)) / (1000 * 60 * 60 * 24 * 365.25);
-                                    if (yearsSinceFirstBuy > 0 && (1 + rawReturn) > 0) {
-                                        firstBuyReturn = (Math.pow(1 + rawReturn, 1 / yearsSinceFirstBuy) - 1) * 100;
-                                    } else {
-                                        firstBuyReturn = rawReturn * 100;
-                                    }
-                                } else {
-                                    firstBuyReturn = rawReturn * 100; // fallback just in case
-                                }
-                            }
+                            const isTopPerf = h.twrAnnual >= 10;
+                            const isLowCost = h.ter > 0 && h.ter <= 0.25;
+                            const isDeviated = Math.abs(h.deviation) > 5;
+                            const isSafe = h.assetClass === 'deposito' || h.assetClass === 'monetario';
+                            
                             return (
-                                <tr key={h.fundName} className={`border-b border-gray-800/50 hover:bg-gray-800/20 transition-colors ${index === activeHoldings.length - 1 ? 'border-b-0' : ''}`}>
-                                    <td className="p-3 font-medium text-white whitespace-normal max-w-[180px]" title={h.fundName}>
-                                        <div className="leading-tight line-clamp-2">
-                                            {h.fundName}
+                                <tr key={h.fundName} className={`border-b border-slate-200/60 transition-colors ${index === activeHoldings.length - 1 ? 'border-b-0' : ''}`}>
+                                    <td className="p-5 font-sans justify-center max-w-[200px]" title={h.fundName}>
+                                        <div className="flex flex-col gap-2">
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-sm border ${
+                                                    h.assetClass === 'monetario' ? 'bg-cyan-50 text-cyan-600 border-cyan-200/50' :
+                                                    h.assetClass === 'renta-fija' ? 'bg-indigo-50 text-indigo-600 border-indigo-200/50' :
+                                                    h.assetClass === 'deposito' ? 'bg-orange-50 text-orange-600 border-orange-200/50' :
+                                                    'bg-emerald-50 text-emerald-600 border-emerald-200/50'
+                                                }`}>
+                                                    {h.assetClass === 'monetario' ? <Coins size={15} /> :
+                                                     h.assetClass === 'renta-fija' ? <ShieldCheck size={15} /> :
+                                                     h.assetClass === 'deposito' ? <PiggyBank size={15} /> :
+                                                     <Activity size={15} />}
+                                                </div>
+                                                <div>
+                                                    <div className="font-medium text-slate-800 leading-tight truncate text-sm">{h.fundName.replace('🏦 ', 'DEP: ')}</div>
+                                                    <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1.5 uppercase font-medium">
+                                                        {h.broker} {h.ter > 0 && <span className="text-slate-400 font-mono text-[9px]">· TER {h.ter}%</span>}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-wrap gap-1.5 ml-[44px]">
+                                                {isLowCost && <span className="bg-emerald-500/10 text-emerald-600 border border-emerald-200/30 px-1.5 py-[2px] rounded-[4px] text-[8px] font-bold uppercase tracking-wider">Bajo Coste</span>}
+                                                {isTopPerf && <span className="bg-indigo-500/10 text-indigo-600 border border-indigo-200/30 px-1.5 py-[2px] rounded-[4px] text-[8px] font-bold uppercase tracking-wider">Top Perf.</span>}
+                                                {isDeviated && <span className="bg-amber-500/10 text-amber-600 border border-amber-200/30 px-1.5 py-[2px] rounded-[4px] text-[8px] font-bold uppercase tracking-wider">Desviado</span>}
+                                                {isSafe && <span className="bg-sky-500/10 text-sky-600 border border-sky-200/30 px-1.5 py-[2px] rounded-[4px] text-[8px] font-bold uppercase tracking-wider">Refugio</span>}
+                                            </div>
                                         </div>
                                     </td>
-                                    <td className="p-3 text-right">
-                                        <div className="text-white font-semibold">{formatCurrency(h.currentValorado)}</div>
-                                        <div className="text-[9px] text-gray-500">Coste: {formatCurrency(h.invested)}</div>
+                                    
+                                    <td className="p-5 text-right">
+                                        <div className="text-slate-900 font-semibold">{formatCurrency(h.currentValorado)}</div>
+                                        <div className="text-[10px] text-slate-400 mt-1">{((h.currentValorado / totalCarteraValorada) * 100).toFixed(1)}% ({h.targetPercent}%)</div>
                                     </td>
-                                    <td className="p-4 text-center">
-                                        <div className={`inline-flex items-center px-2 py-1 rounded bg-blue-500/10 font-bold ${h.ytdReturn >= 0 ? 'text-blue-400' : 'text-danger'}`}>
-                                            {isPrivacyMode ? 'XX.X%' : (h.nav === 0 ? '-' : `${h.ytdReturn >= 0 ? '+' : ''}${h.ytdReturn.toFixed(2)}%`)}
+                                    
+                                    <td className="p-5 text-center">
+                                        <div className={`px-2 py-1 font-semibold rounded-md inline-flex items-center text-[10px] ${h.ytdReturn >= 0 ? 'text-emerald-700 bg-emerald-100' : 'text-rose-700 bg-rose-100'}`}>
+                                            {isPrivacyMode ? '**.*%' : (h.nav === 0 ? '-' : `${h.ytdReturn >= 0 ? '+' : ''}${h.ytdReturn.toFixed(2)}%`)}
                                         </div>
                                     </td>
-                                    <td className="p-4 text-center">
+
+                                    <td className="p-5 text-center px-2">
                                         {h.sparklineData && h.sparklineData.length > 0 ? (
-                                            <div className="w-24 h-10 inline-block mb-[-6px]">
+                                            <div className="w-full h-8 opacity-70 hover:opacity-100 transition-opacity">
                                                 <ResponsiveContainer width="100%" height="100%">
-                                                    <LineChart data={h.sparklineData}>
+                                                    <LineChart data={h.sparklineData} margin={{ top: 5, bottom: 5, left: 2, right: 2 }}>
                                                         <YAxis hide domain={['dataMin', 'dataMax']} />
-                                                        <Line
-                                                            type="monotone"
-                                                            dataKey="nav"
-                                                            stroke={h.sparklineData[0].nav <= h.sparklineData[h.sparklineData.length - 1].nav ? '#4ade80' : '#f87171'}
-                                                            strokeWidth={2}
-                                                            dot={false}
-                                                            isAnimationActive={false}
-                                                        />
+                                                        <Line type="monotone" dataKey="nav" stroke={h.sparklineData[0].nav <= h.sparklineData[h.sparklineData.length - 1].nav ? '#10b981' : '#ca8a04'} strokeWidth={1.5} dot={false} isAnimationActive={false} />
                                                     </LineChart>
                                                 </ResponsiveContainer>
                                             </div>
                                         ) : (
-                                            <span className="text-gray-600 text-xs">-</span>
+                                            <span className="text-slate-300 text-xs">-</span>
                                         )}
                                     </td>
-                                    <td className="p-3 text-center">
-                                        <div className={`flex flex-col items-center font-bold ${firstBuyReturn !== null ? (firstBuyReturn >= 0 ? 'text-green-400' : 'text-danger') : 'text-gray-600'}`}>
-                                            <span className="text-[9px] uppercase text-gray-600 font-semibold">Compra 1</span>
-                                            {isPrivacyMode ? 'XX.X%' : (firstBuyReturn !== null ? `${firstBuyReturn >= 0 ? '+' : ''}${firstBuyReturn.toFixed(2)}%` : '-')}
+
+                                    <td className="p-5 text-center">
+                                        <div className={`text-[11px] font-medium ${h.twrAnnual >= 0 ? 'text-slate-700' : 'text-rose-600'}`}>
+                                            {isPrivacyMode ? '**.*%' : `${h.twrAnnual >= 0 ? '+' : ''}${h.twrAnnual.toFixed(2)}%`}
                                         </div>
                                     </td>
-                                    <td className="p-3 text-center">
-                                        <div className={`flex flex-col items-center font-bold ${h.twrTotal >= 0 ? 'text-green-400' : 'text-danger'}`}>
-                                            <span className="text-[9px] uppercase text-gray-600 font-semibold">Total</span>
-                                            {isPrivacyMode ? 'XX.X%' : `${h.twrTotal >= 0 ? '+' : ''}${h.twrTotal.toFixed(2)}%`}
+
+                                    <td className="p-5 text-center">
+                                        <div className={`text-[11px] font-bold ${h.mwrAnnual >= 0 ? 'text-indigo-600' : 'text-rose-600'}`}>
+                                            {isPrivacyMode ? '**.*%' : `${h.mwrAnnual >= 0 ? '+' : ''}${h.mwrAnnual.toFixed(2)}%`}
                                         </div>
                                     </td>
-                                    <td className="p-3 text-center">
-                                        <div className={`flex flex-col items-center font-bold ${h.twrAnnual >= 0 ? 'text-green-400' : 'text-danger'}`}>
-                                            <span className="text-[9px] uppercase text-gray-600 font-semibold">Anual</span>
-                                            {isPrivacyMode ? 'XX.X%' : `${h.twrAnnual >= 0 ? '+' : ''}${h.twrAnnual.toFixed(2)}%`}
-                                        </div>
-                                    </td>
-                                    <td className="p-3 text-center">
-                                        <div className={`px-1.5 py-1 rounded bg-indigo-500/5 border border-indigo-500/10 flex flex-col items-center font-bold ${h.mwrAnnual >= 0 ? 'text-indigo-400' : 'text-danger'}`}>
-                                            <span className="text-[8px] uppercase text-indigo-500/50 font-bold">Real</span>
-                                            {isPrivacyMode ? 'XX.X%' : `${h.mwrAnnual >= 0 ? '+' : ''}${h.mwrAnnual.toFixed(2)}%`}
-                                        </div>
-                                    </td>
-                                    <td className="p-3 text-center">
-                                        <div className="flex flex-col items-center text-amber-400/80 font-medium">
-                                            {h.ter > 0 ? (
-                                                <>
-                                                    <span>{h.ter.toFixed(2)}%</span>
-                                                    <span className="text-[9px] text-amber-500/40">~{isPrivacyMode ? 'XX€' : formatCurrency(h.terCost)}/a</span>
-                                                </>
-                                            ) : (
-                                                <span className="text-gray-600">-</span>
-                                            )}
-                                        </div>
-                                    </td>
-                                    <td className="p-3 text-center">
-                                        <div className="inline-block px-1.5 py-0.5 rounded-md bg-gray-800 text-xs font-medium">
-                                            {h.currentPercent.toFixed(1)}%
-                                        </div>
-                                    </td>
-                                    <td className="p-3 text-right">
-                                        <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${h.rebalanceAmount > 0 ? 'bg-success/10 text-success border border-success/20' : 'bg-danger/10 text-danger border border-danger/20'}`}>
-                                            <ArrowRightLeft size={12} />
-                                            {isPrivacyMode ? 'XXXX' : `${h.rebalanceAmount > 0 ? '+' : ''}${formatCurrency(h.rebalanceAmount)}`}
+
+                                    <td className="p-5 text-right">
+                                        <div className={`inline-flex font-medium items-center gap-2 text-[10px] px-2 py-1 rounded w-fit ml-auto ${
+                                            h.rebalanceAmount === 0 ? 'text-slate-400' :
+                                            h.rebalanceAmount > 0 ? 'text-emerald-700 bg-emerald-50 border border-emerald-200' : 
+                                            'text-rose-700 bg-rose-50 border border-rose-200'
+                                        }`}>
+                                            {h.rebalanceAmount !== 0 && <ArrowRightLeft size={9} />}
+                                            {isPrivacyMode ? '****' : (h.rebalanceAmount === 0 ? '-' : `${h.rebalanceAmount > 0 ? '+' : ''}${formatCurrency(h.rebalanceAmount)}`)}
                                         </div>
                                     </td>
                                 </tr>

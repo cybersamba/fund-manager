@@ -90,7 +90,8 @@ function Sparkline({ data, color }) {
     return (
         <ResponsiveContainer width="100%" height={60}>
             <LineChart data={data} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
-                <Line type="monotone" dataKey="nav" stroke={color} strokeWidth={2} dot={false} />
+                <YAxis hide={true} domain={['auto', 'auto']} />
+                <Line type="monotone" dataKey="nav" stroke={color} strokeWidth={2} dot={false} isAnimationActive={false} />
             </LineChart>
         </ResponsiveContainer>
     );
@@ -104,8 +105,14 @@ function FundCard({ fund, onDelete, isPrivacyMode, orders }) {
 
     const perf = calcPerf(fund.history);
     const chartData = buildChartData(fund.history, period);
-    const isPos = perf.ytd >= 0;
-    const color = isPos ? '#22c55e' : '#ef4444';
+    const sparklineData = buildChartData(fund.history, 12);
+    
+    const isYtdPos = perf.ytd !== null && perf.ytd >= 0;
+    const sparklineIsPos = sparklineData.length > 1 ? sparklineData[sparklineData.length - 1].nav >= sparklineData[0].nav : true;
+    const sparklineColor = sparklineIsPos ? '#22c55e' : '#ef4444';
+    
+    const chartIsPos = chartData.length > 1 ? chartData[chartData.length - 1].nav >= chartData[0].nav : true;
+    const chartColor = chartIsPos ? '#22c55e' : '#ef4444';
 
     // Simulator: if you invested simAmount at the start of the chosen period
     const simResult = (() => {
@@ -188,8 +195,8 @@ function FundCard({ fund, onDelete, isPrivacyMode, orders }) {
                             <div className="text-xl font-bold text-white">
                                 {isPrivacyMode ? 'XXXX' : (perf.latest ? perf.latest.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €' : '—')}
                             </div>
-                            <div className={`text-[11px] font-semibold ${isPos ? 'text-green-400' : 'text-red-400'}`}>
-                                {perf.ytd !== null ? `${isPos ? '▲' : '▼'} ${Math.abs(perf.ytd).toFixed(2)}% YTD` : ''}
+                            <div className={`text-[11px] font-semibold ${isYtdPos ? 'text-green-400' : 'text-red-400'}`}>
+                                {perf.ytd !== null ? `${isYtdPos ? '▲' : '▼'} ${Math.abs(perf.ytd).toFixed(2)}% YTD` : ''}
                             </div>
                         </div>
                     )}
@@ -198,7 +205,7 @@ function FundCard({ fund, onDelete, isPrivacyMode, orders }) {
                 {/* Sparkline */}
                 {!fund.loading && !fund.error && fund.history && (
                     <div className="mb-4">
-                        <Sparkline data={buildChartData(fund.history, 12)} color={color} />
+                        <Sparkline data={sparklineData} color={sparklineColor} />
                     </div>
                 )}
 
@@ -259,19 +266,20 @@ function FundCard({ fund, onDelete, isPrivacyMode, orders }) {
                                     <AreaChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
                                         <defs>
                                             <linearGradient id={`grad-${fund.morningstarId}`} x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="5%" stopColor={color} stopOpacity={0.3} />
-                                                <stop offset="95%" stopColor={color} stopOpacity={0} />
+                                                <stop offset="5%" stopColor={chartColor} stopOpacity={0.3} />
+                                                <stop offset="95%" stopColor={chartColor} stopOpacity={0} />
                                             </linearGradient>
                                         </defs>
                                         <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
                                         <XAxis dataKey="date" stroke="#4b5563" fontSize={10} tickLine={false} axisLine={false} minTickGap={40} />
                                         <YAxis stroke="#4b5563" fontSize={10} tickLine={false} axisLine={false} width={60}
+                                            domain={['auto', 'auto']}
                                             tickFormatter={v => v.toLocaleString('es-ES', { maximumFractionDigits: 0 })} />
                                         <Tooltip
                                             contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', borderRadius: '8px', fontSize: '12px' }}
                                             formatter={(v) => [v.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €', 'NAV']}
                                         />
-                                        <Area type="monotone" dataKey="nav" stroke={color} strokeWidth={2}
+                                        <Area type="monotone" dataKey="nav" stroke={chartColor} strokeWidth={2}
                                             fill={`url(#grad-${fund.morningstarId})`} fillOpacity={1} dot={false} />
                                     </AreaChart>
                                 </ResponsiveContainer>

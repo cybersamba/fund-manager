@@ -1,26 +1,41 @@
-/** @type {import('tailwindcss').Config} */
+/** 
+ * @type {import('tailwindcss').Config} 
+ */
 export default {
     content: [
-        "./index.html",
-        "./src/**/*.{js,ts,jsx,tsx}",
+      "./index.html",
+      "./src/**/*.{js,ts,jsx,tsx}",
     ],
     theme: {
-        extend: {
-            colors: {
-                background: '#0f172a', // Slate 900
-                surface: '#1e293b', // Slate 800
-                primary: '#3b82f6', // Blue 500
-                'primary-hover': '#2563eb', // Blue 600
-                accent: '#06b6d4', // Cyan 500
-                success: '#10b981', // Emerald 500
-                danger: '#ef4444', // Red 500
-                text: '#f8fafc', // Slate 50
-                'text-muted': '#94a3b8', // Slate 400
-            },
-            fontFamily: {
-                sans: ['Inter', 'sans-serif'],
-            },
+      extend: {
+        fontFamily: {
+          sans: ['Inter', 'system-ui', 'sans-serif'],
+          mono: ['JetBrains Mono', 'Menlo', 'monospace'],
+          display: ['Inter', 'system-ui', 'sans-serif'],
         },
+        boxShadow: {
+            // Elegant Stripe-like soft shadows
+            'premium': '0 4px 20px -2px rgba(0, 0, 0, 0.04), 0 0 3px rgba(0,0,0,0.02)',
+            'premium-hover': '0 10px 30px -4px rgba(0, 0, 0, 0.08), 0 4px 10px -2px rgba(0,0,0,0.04)',
+            'nav': '0 20px 40px -8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.02)',
+        },
+        letterSpacing: {
+          tighter: '-.04em',
+          tight: '-.02em',
+          normal: '0',
+          wide: '.025em',
+        },
+        animation: {
+          'fade-in-up': 'fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+          'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        },
+        keyframes: {
+          fadeInUp: {
+            '0%': { opacity: 0, transform: 'translateY(10px)' },
+            '100%': { opacity: 1, transform: 'translateY(0)' },
+          }
+        }
+      },
     },
     plugins: [],
-}
+  }

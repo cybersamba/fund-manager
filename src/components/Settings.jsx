@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Trash2, AlertTriangle, Save, Download, Upload } from 'lucide-react';
+import { Trash2, AlertTriangle, Save, Download, Upload, Settings as SettingsIcon, Target, Wallet } from 'lucide-react';
 
 export default function Settings({ onClearData, onRestoreData, onExportData, onImportData, currency, setCurrency, fundConfigs, setFundConfigs }) {
     const [confirmClear, setConfirmClear] = useState(false);
@@ -13,23 +13,29 @@ export default function Settings({ onClearData, onRestoreData, onExportData, onI
         if (onRestoreData) onRestoreData();
     };
 
+    const totalTarget = Object.values(fundConfigs || {}).reduce((sum, f) => sum + (parseFloat(f.targetPercent) || 0), 0);
+
     return (
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-4xl mx-auto w-full">
             <header className="mb-8">
-                <h1 className="text-3xl font-bold mb-2">Configuración</h1>
-                <div className="text-gray-400">Gestiona las preferencias y datos de la aplicación.</div>
+                <h1 className="text-2xl font-medium mb-1 text-slate-900 tracking-tight">System Configuration</h1>
+                <div className="text-[10px] font-mono tracking-widest uppercase text-slate-500">Manage engine preferences and core data</div>
             </header>
 
             <div className="space-y-6">
-                <div className="card">
-                    <h2 className="text-xl font-semibold mb-4 text-white">Preferencias Generales</h2>
-                    <div className="p-4 bg-surface border border-gray-700 rounded-lg flex items-center justify-between">
+                {/* General Preferences */}
+                <div className="bento-card p-6 md:p-8">
+                    <div className="flex items-center gap-3 mb-6">
+                        <SettingsIcon size={16} className="text-slate-500" />
+                        <h2 className="text-sm font-mono tracking-widest uppercase text-slate-500">Core Preferences</h2>
+                    </div>
+                    <div className="nano-panel flex items-center justify-between border-transparent bg-transparent px-0 py-0">
                         <div>
-                            <div className="font-medium text-white mb-1">Moneda Base</div>
-                            <div className="text-sm text-gray-400">Selecciona la moneda principal para mostrar los valores.</div>
+                            <div className="font-medium text-slate-900 mb-1">Base Currency</div>
+                            <div className="text-xs text-slate-500 font-mono">Set the primary reporting currency format.</div>
                         </div>
                         <select
-                            className="bg-background border border-gray-700 text-white rounded-md px-3 py-2 outline-none focus:border-primary"
+                            className="bg-white border border-slate-200/60 text-slate-900 font-mono rounded-lg px-4 py-2 text-xs outline-none focus:border-slate-200/60 transition-all"
                             value={currency}
                             onChange={(e) => setCurrency(e.target.value)}
                         >
@@ -39,33 +45,54 @@ export default function Settings({ onClearData, onRestoreData, onExportData, onI
                     </div>
                 </div>
 
-                <div className="card">
+                {/* Fund Management */}
+                <div className="bento-card p-6 md:p-8">
                     <div className="flex items-center justify-between mb-6">
-                        <h2 className="text-xl font-semibold text-white">Gestión de Mis Fondos</h2>
-                        <div className="text-xs font-bold px-2 py-1 bg-blue-500/10 text-blue-400 rounded border border-blue-500/20">
-                            TOTAL OBJETIVO: {Object.values(fundConfigs || {}).reduce((sum, f) => sum + (parseFloat(f.targetPercent) || 0), 0).toFixed(0)}%
+                        <div className="flex items-center gap-3">
+                            <Wallet size={16} className="text-slate-500" />
+                            <h2 className="text-sm font-mono tracking-widest uppercase text-slate-500">Asset Configuration</h2>
+                        </div>
+                        <div className={`text-[10px] font-bold font-mono px-2.5 py-1 rounded bg-white border ${Math.abs(totalTarget - 100) < 0.1 ? 'border-green-500/30 text-green-500' : 'border-red-500/30 text-red-500'}`}>
+                            TARGET: {totalTarget.toFixed(0)}%
                         </div>
                     </div>
                     
-                    <p className="text-sm text-gray-400 mb-6">
-                        Configura los fondos de tu portfolio para habilitar el seguimiento de precios real y los cálculos de rebalanceo.
+                    <p className="text-xs font-mono text-slate-500 mb-6 border-l border-slate-200/60 pl-3">
+                        Configure portfolio assets to enable real market tracking and rebalancing calculations.
                     </p>
 
                     <div className="space-y-4">
                         {Object.entries(fundConfigs || {}).map(([name, config]) => (
-                            <div key={name} className="p-4 bg-surface border border-gray-800 rounded-xl">
-                                <div className="flex flex-col md:flex-row md:items-center gap-4">
-                                    <div className="flex-1">
-                                        <div className="text-sm font-bold text-white mb-1">{name}</div>
-                                        <div className="text-[10px] text-gray-500 uppercase tracking-wider">Configuración del Activo</div>
+                            <div key={name} className="p-5 bg-slate-50 border border-white/[0.03] rounded-xl">
+                                <div className="flex flex-col lg:flex-row lg:items-center gap-5">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-sans font-medium text-slate-900 mb-1 truncate">{name}</div>
+                                        <div className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Asset Parameters</div>
                                     </div>
                                     
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 w-full md:w-auto mt-2 md:mt-0">
-                                        <div className="flex flex-col gap-1">
-                                            <label className="text-[10px] text-gray-500 font-bold uppercase">ID Morningstar</label>
+                                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 w-full lg:w-fit">
+                                        <div className="flex flex-col gap-2 relative">
+                                            <label className="text-[9px] font-mono text-cyan-600/50 uppercase tracking-widest">Activo</label>
+                                            <select 
+                                                className="metric-input text-xs sm:w-28 font-medium text-cyan-700"
+                                                value={config.assetClass || 'renta-variable'}
+                                                onChange={(e) => {
+                                                    const newConfigs = { ...fundConfigs };
+                                                    newConfigs[name] = { ...newConfigs[name], assetClass: e.target.value };
+                                                    setFundConfigs(newConfigs);
+                                                }}
+                                            >
+                                                <option value="renta-variable">R. Variable</option>
+                                                <option value="renta-fija">R. Fija</option>
+                                                <option value="monetario">Monetario</option>
+                                                <option value="deposito">Depósito</option>
+                                            </select>
+                                        </div>
+                                        <div className="flex flex-col gap-2 relative">
+                                            <label className="text-[9px] font-mono text-slate-500 uppercase tracking-widest">Morningstar ID</label>
                                             <input 
                                                 type="text" 
-                                                className="bg-background border border-gray-700 rounded px-2 py-1.5 text-xs text-white focus:border-blue-500 outline-none w-full md:w-28 font-mono"
+                                                className="metric-input text-xs sm:w-28"
                                                 placeholder="F0GBR06OZK"
                                                 value={config.morningstarId || ''}
                                                 onChange={(e) => {
@@ -75,12 +102,12 @@ export default function Settings({ onClearData, onRestoreData, onExportData, onI
                                                 }}
                                             />
                                         </div>
-                                        <div className="flex flex-col gap-1">
-                                            <label className="text-[10px] text-gray-500 font-bold uppercase">% Objetivo</label>
+                                        <div className="flex flex-col gap-2 relative">
+                                            <label className="text-[9px] font-mono text-slate-500 uppercase tracking-widest">Target %</label>
                                             <div className="relative">
                                                 <input 
                                                     type="number" 
-                                                    className="bg-background border border-gray-700 rounded px-2 py-1.5 text-xs text-white focus:border-blue-500 outline-none w-full md:w-20 pr-6"
+                                                    className="metric-input text-xs pr-6 sm:w-24"
                                                     placeholder="0"
                                                     value={config.targetPercent || ''}
                                                     onChange={(e) => {
@@ -89,16 +116,16 @@ export default function Settings({ onClearData, onRestoreData, onExportData, onI
                                                         setFundConfigs(newConfigs);
                                                     }}
                                                 />
-                                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-gray-500 font-bold">%</span>
+                                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] text-slate-500">%</span>
                                             </div>
                                         </div>
-                                        <div className="flex flex-col gap-1">
-                                            <label className="text-[10px] text-amber-500/70 font-bold uppercase" title="Total Expense Ratio (Gastos Anuales)">Comisión TER</label>
+                                        <div className="flex flex-col gap-2 relative">
+                                            <label className="text-[9px] font-mono text-amber-500/50 uppercase tracking-widest">Expense Ratio</label>
                                             <div className="relative">
                                                 <input 
                                                     type="number" 
                                                     step="0.01"
-                                                    className="bg-background border border-gray-700 rounded px-2 py-1.5 text-xs text-amber-100 focus:border-amber-500 outline-none w-full md:w-20 pr-6"
+                                                    className="metric-input text-xs pr-6 sm:w-24 font-mono text-amber-500"
                                                     placeholder="0.20"
                                                     value={config.ter || ''}
                                                     onChange={(e) => {
@@ -107,7 +134,7 @@ export default function Settings({ onClearData, onRestoreData, onExportData, onI
                                                         setFundConfigs(newConfigs);
                                                     }}
                                                 />
-                                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-amber-500/50 font-bold">%</span>
+                                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] text-amber-500/50">%</span>
                                             </div>
                                         </div>
                                     </div>
@@ -115,115 +142,101 @@ export default function Settings({ onClearData, onRestoreData, onExportData, onI
                             </div>
                         ))}
                     </div>
-                    
-                    <div className="mt-6 p-3 bg-amber-500/5 border border-amber-500/20 rounded-lg text-[11px] text-amber-200/70">
-                        💡 <strong>Tip:</strong> Puedes encontrar el ID de Morningstar en la URL de morningstar.es (ej: ?id=<strong>F0GBR06OZK</strong>). 
-                        El sistema lo usará para obtener el NAV histórico automáticamente.
-                    </div>
                 </div>
 
-                <div className="card border-danger/20">
-                    <h2 className="text-xl font-semibold mb-4 text-danger flex items-center gap-2">
-                        <AlertTriangle size={24} />
-                        Zona de Peligro
-                    </h2>
-
-                    <div className="p-4 border border-danger/20 bg-danger/5 rounded-lg">
-                        <div className="font-medium text-white mb-2">Borrar Historial de Órdenes</div>
-                        <p className="text-sm text-gray-400 mb-4">
-                            Esta acción eliminará permanentemente todas las órdenes registradas en tu portfolio local.
-                            Esta acción no se puede deshacer.
-                        </p>
-
-                        {!confirmClear ? (
-                            <button
-                                onClick={() => setConfirmClear(true)}
-                                className="flex items-center gap-2 px-4 py-2 bg-surface hover:bg-danger/10 border border-gray-700 hover:border-danger text-danger rounded-lg transition-colors font-medium"
-                            >
-                                <Trash2 size={18} /> Borrar todos los datos
-                            </button>
-                        ) : (
-                            <div className="flex items-center gap-3">
-                                <span className="text-sm text-danger font-medium">¿Estás completamente seguro?</span>
+                {/* Data Management & Danger Zone */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Backups */}
+                    <div className="bento-card p-6 md:p-8">
+                        <div className="flex items-center gap-3 mb-6">
+                            <Save size={16} className="text-slate-500" />
+                            <h2 className="text-sm font-mono tracking-widest uppercase text-slate-500">Data Persistence</h2>
+                        </div>
+                        
+                        <div className="space-y-6">
+                            <div>
+                                <div className="font-medium text-slate-900 mb-1">Export Ledger</div>
+                                <p className="text-xs text-slate-500 font-mono mb-3">Download a local JSON copy of all transactions.</p>
                                 <button
-                                    onClick={handleClear}
-                                    className="px-4 py-2 bg-danger hover:bg-danger/90 text-white rounded-lg transition-colors font-medium"
+                                    onClick={onExportData}
+                                    className="flex items-center justify-center w-full gap-2 px-4 py-2.5 bg-white text-black text-xs font-semibold rounded-lg hover:bg-zinc-200 transition-colors"
                                 >
-                                    Sí, eliminar
-                                </button>
-                                <button
-                                    onClick={() => setConfirmClear(false)}
-                                    className="px-4 py-2 bg-surface hover:bg-gray-800 border border-gray-700 text-gray-300 rounded-lg transition-colors"
-                                >
-                                    Cancelar
+                                    <Download size={14} /> Download Backup
                                 </button>
                             </div>
-                        )}
+
+                            <div className="border-t border-slate-200/60 pt-6">
+                                <div className="font-medium text-slate-900 mb-1">Import Ledger</div>
+                                <p className="text-xs text-slate-500 font-mono mb-3">Restore transactions from a previous JSON backup.</p>
+                                <label className="flex items-center justify-center w-full gap-2 px-4 py-3 bg-transparent border border-slate-200/60 border-dashed text-slate-500 text-xs font-medium rounded-lg hover:bg-white/5 hover:text-slate-900 cursor-pointer transition-colors">
+                                    <Upload size={14} /> Upload JSON
+                                    <input
+                                        type="file"
+                                        accept=".json"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                            const file = e.target.files[0];
+                                            if (!file) return;
+                                            const reader = new FileReader();
+                                            reader.onload = (event) => {
+                                                try {
+                                                    const json = JSON.parse(event.target.result);
+                                                    if (onImportData) onImportData(json);
+                                                } catch (err) {
+                                                    alert("Invalid backup file.");
+                                                }
+                                            };
+                                            reader.readAsText(file);
+                                        }}
+                                    />
+                                </label>
+                            </div>
+                        </div>
                     </div>
-                </div>
 
-                <div className="card">
-                    <h2 className="text-xl font-semibold mb-4 text-white">Restaurar Datos</h2>
-                    <div className="p-4 bg-surface border border-gray-700 rounded-lg">
-                        <div className="font-medium text-white mb-2">Restaurar Órdenes Originales</div>
-                        <p className="text-sm text-gray-400 mb-4">
-                            Si borraste órdenes por error, puedes restaurar la cartera inicial de prueba (La Française y Groupama).
-                        </p>
-                        <button
-                            onClick={handleRestore}
-                            className="flex items-center gap-2 px-4 py-2 bg-primary/20 hover:bg-primary/30 border border-primary/50 text-white rounded-lg transition-colors font-medium mt-4"
-                        >
-                            <Save size={18} /> Restaurar Datos Iniciales
-                        </button>
-                    </div>
-                </div>
-
-                <div className="card">
-                    <h2 className="text-xl font-semibold mb-4 text-white">Copias de Seguridad (Backups)</h2>
-                    <div className="p-4 bg-surface border border-gray-700 rounded-lg flex flex-col gap-6">
-
+                    {/* Danger Zone */}
+                    <div className="bento-card border-red-500/20 p-6 md:p-8 flex flex-col justify-between">
                         <div>
-                            <div className="font-medium text-white mb-2">Exportar Datos Manualmente</div>
-                            <p className="text-sm text-gray-400 mb-4">
-                                Aunque la aplicación hace una copia automática diaria de tus órdenes, puedes forzar una exportación ahora para guardarlo en formato JSON seguro.
-                            </p>
+                            <div className="flex items-center gap-3 mb-6">
+                                <AlertTriangle size={16} className="text-red-500" />
+                                <h2 className="text-sm font-mono tracking-widest uppercase text-red-500">Danger Zone</h2>
+                            </div>
+
+                            <div className="mb-6">
+                                <div className="font-medium text-slate-900 mb-1">Flush Database</div>
+                                <p className="text-[10px] uppercase tracking-widest text-red-400 font-mono mb-4">
+                                    Warning: This will permanently delete all records in the local ledger. Irreversible.
+                                </p>
+
+                                {!confirmClear ? (
+                                    <button
+                                        onClick={() => setConfirmClear(true)}
+                                        className="flex items-center justify-center w-full gap-2 px-4 py-2.5 bg-transparent border border-red-500/30 text-red-400 text-xs font-medium rounded-lg hover:bg-red-500/10 transition-colors"
+                                    >
+                                        <Trash2 size={14} /> Flush All Data
+                                    </button>
+                                ) : (
+                                    <div className="flex flex-col gap-2 p-3 bg-red-500/5 rounded-lg border border-red-500/20">
+                                        <span className="text-xs text-red-400 font-mono uppercase text-center mb-1">Confirm deletion?</span>
+                                        <div className="flex gap-2">
+                                            <button onClick={handleClear} className="flex-1 py-2 bg-red-500 hover:bg-red-600 text-slate-900 text-xs font-bold rounded-md transition-colors">Confirm</button>
+                                            <button onClick={() => setConfirmClear(false)} className="flex-1 py-2 bg-white border border-slate-200/60 text-slate-500 hover:text-slate-900 text-xs font-medium rounded-md transition-colors">Abort</button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="border-t border-slate-200/60 pt-6 mt-6">
+                            <div className="font-medium text-slate-900 mb-1">Restore Default Dataset</div>
+                            <p className="text-[10px] uppercase font-mono text-slate-500 mb-3">Load the demo portfolio template.</p>
                             <button
-                                onClick={onExportData}
-                                className="flex items-center gap-2 px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/50 text-blue-400 rounded-lg transition-colors font-medium"
+                                onClick={handleRestore}
+                                className="flex items-center justify-center w-full gap-2 px-4 py-2.5 bg-transparent border border-slate-200/60 text-slate-500 text-xs font-medium rounded-lg hover:bg-white/5 hover:text-slate-900 transition-colors"
                             >
-                                <Download size={18} /> Descargar Backup (.json)
+                                <Save size={14} /> Load Core Dataset
                             </button>
                         </div>
-
-                        <div className="border-t border-gray-800 pt-6">
-                            <div className="font-medium text-white mb-2">Importar Datos / Recuperar</div>
-                            <p className="text-sm text-gray-400 mb-4">
-                                Selecciona un archivo ".json" con tus órdenes exportadas previamente para restaurar tu cartera por completo.
-                            </p>
-                            <label className="flex items-center gap-2 px-4 py-2 bg-surface hover:bg-gray-800 border-2 border-dashed border-gray-600 hover:border-gray-500 text-gray-300 rounded-lg transition-colors font-medium w-fit cursor-pointer">
-                                <Upload size={18} /> Subir Archivo JSON
-                                <input
-                                    type="file"
-                                    accept=".json"
-                                    className="hidden"
-                                    onChange={(e) => {
-                                        const file = e.target.files[0];
-                                        if (!file) return;
-                                        const reader = new FileReader();
-                                        reader.onload = (event) => {
-                                            try {
-                                                const json = JSON.parse(event.target.result);
-                                                if (onImportData) onImportData(json);
-                                            } catch (err) {
-                                                alert("El archivo no es un Backup válido o está corrupto.");
-                                            }
-                                        };
-                                        reader.readAsText(file);
-                                    }}
-                                />
-                            </label>
-                        </div>
-
                     </div>
                 </div>
             </div>

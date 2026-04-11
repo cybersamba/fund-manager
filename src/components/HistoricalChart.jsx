@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { getMatchingFundKey } from '../utils/helpers';
 
-export default function HistoricalChart({ orders, historicalNavs, isPrivacyMode, currency, formatCurrency }) {
+export default function HistoricalChart({ orders, historicalNavs, isPrivacyMode, currency, formatCurrency, seamless = false }) {
     const [period, setPeriod] = useState('ALL');
 
     const periods = [
@@ -27,11 +27,14 @@ export default function HistoricalChart({ orders, historicalNavs, isPrivacyMode,
         let startDate;
         const selectedPeriod = periods.find(p => p.id === period);
         
+        const absoluteFirstDate = new Date(Math.min(...orders.map(o => new Date(o.date).getTime())));
+        absoluteFirstDate.setHours(0, 0, 0, 0);
+        
         if (selectedPeriod && selectedPeriod.days) {
             startDate = new Date(today);
             startDate.setDate(today.getDate() - selectedPeriod.days);
         } else {
-            startDate = new Date(Math.min(...orders.map(o => new Date(o.date).getTime())));
+            startDate = absoluteFirstDate;
         }
         startDate.setHours(0, 0, 0, 0);
 
@@ -63,9 +66,13 @@ export default function HistoricalChart({ orders, historicalNavs, isPrivacyMode,
         };
 
         const dataPoints = [];
-        let currentDate = new Date(startDate);
+        // Start simulation from the first order to maintain true historical compounding
+        let currentDate = new Date(absoluteFirstDate);
 
         const sortedOrders = [...orders].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        
+        let benchmarkValue = 0;
+        let lastTotalInvested = 0;
 
         while (currentDate <= today) {
             const time = currentDate.getTime();
@@ -163,12 +170,43 @@ export default function HistoricalChart({ orders, historicalNavs, isPrivacyMode,
                 }
             });
 
-            dataPoints.push({
-                date: new Date(currentDate).toLocaleDateString(undefined, { day: period === '1W' ? '2-digit' : undefined, month: 'short', year: '2-digit' }),
-                timestamp: time,
-                invested: totalInvested,
-                value: totalValue,
+            // TWR Percentage-based Benchmark (Shadow Portfolio):
+            if (time > absoluteFirstDate.getTime()) {
+                benchmarkValue = benchmarkValue * Math.pow(1.07, 1/365); // 7% CAGR
+            }
+
+            const dailyOrders = orders.filter(o => {
+                const d = new Date(o.date);
+                d.setHours(0,0,0,0);
+                return d.getTime() === time;
             });
+
+            let dailyBuys = 0;
+            let dailySells = 0;
+            dailyOrders.forEach(o => {
+                if (o.type === 'buy' || o.type === 'deposit') dailyBuys += o.amount;
+                else if (o.type === 'sell') dailySells += o.amount;
+            });
+
+            if (dailyBuys > 0) benchmarkValue += dailyBuys;
+            if (dailySells > 0) {
+                const valueBefore = totalValue + dailySells;
+                if (valueBefore > 0) {
+                    benchmarkValue = benchmarkValue * (1 - (dailySells / valueBefore));
+                } else {
+                    benchmarkValue -= dailySells;
+                }
+            }
+
+            if (time >= startDate.getTime()) {
+                dataPoints.push({
+                    date: new Date(currentDate).toLocaleDateString(undefined, { day: period === '1W' ? '2-digit' : undefined, month: 'short', year: '2-digit' }),
+                    timestamp: time,
+                    invested: totalInvested,
+                    value: totalValue,
+                    benchmark: benchmarkValue
+                });
+            }
 
             currentDate.setDate(currentDate.getDate() + 1);
         }
@@ -186,24 +224,26 @@ export default function HistoricalChart({ orders, historicalNavs, isPrivacyMode,
         return null;
     }
 
-    const minValue = Math.min(...chartData.map(d => Math.min(d.invested, d.value)));
-    const maxValue = Math.max(...chartData.map(d => Math.max(d.invested, d.value)));
-    const yMin = Math.max(0, minValue * 0.95);
+    const isPositive = chartData.length > 0 && chartData[chartData.length - 1].value >= chartData[chartData.length - 1].invested;
+    const chartColor = isPositive ? '#22c55e' : '#ef4444';
 
     return (
-        <div className="card mb-8">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                <h2 className="text-xl font-semibold">Evolución de la Cartera</h2>
+        <div className={seamless ? "w-full" : "bento-card mb-8"}>
+            <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4`}>
+                <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full shadow-sm" style={{ backgroundColor: chartColor }}></span>
+                    <h2 className="text-xs font-bold text-slate-800 uppercase tracking-widest font-mono">Curva de Rendimiento</h2>
+                </div>
                 
-                <div className="flex bg-surface p-1 rounded-lg border border-gray-800">
+                <div className="flex p-0.5 rounded-lg border bg-slate-50 border-slate-200/60 shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)]">
                     {periods.map((p) => (
                         <button
                             key={p.id}
                             onClick={() => setPeriod(p.id)}
-                            className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
+                            className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all ${
                                 period === p.id 
-                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' 
-                                : 'text-gray-500 hover:text-gray-300'
+                                ? 'bg-white text-slate-900 shadow-sm border border-slate-200/50'
+                                : 'text-slate-500 hover:text-slate-900'
                             }`}
                         >
                             {p.label}
@@ -212,20 +252,20 @@ export default function HistoricalChart({ orders, historicalNavs, isPrivacyMode,
                 </div>
             </div>
 
-            <div className="h-[350px] w-full">
+            <div className={`${seamless ? 'h-[200px] md:h-[260px]' : 'h-[350px]'} w-full`}>
                 <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                    <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                         <defs>
                             <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4} />
-                                <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                                <stop offset="5%" stopColor={chartColor} stopOpacity={0.3} />
+                                <stop offset="95%" stopColor={chartColor} stopOpacity={0} />
                             </linearGradient>
                             <linearGradient id="colorInvested" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#94a3b8" stopOpacity={0.2} />
-                                <stop offset="95%" stopColor="#94a3b8" stopOpacity={0} />
+                                <stop offset="5%" stopColor="#cbd5e1" stopOpacity={0.2} />
+                                <stop offset="95%" stopColor="#f8fafc" stopOpacity={0} />
                             </linearGradient>
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
                         <XAxis
                             dataKey="date"
                             stroke="#94a3b8"
@@ -237,39 +277,51 @@ export default function HistoricalChart({ orders, historicalNavs, isPrivacyMode,
                         />
                         <YAxis
                             stroke="#94a3b8"
-                            fontSize={12}
-                            tickFormatter={(val) => isPrivacyMode ? 'XXXX' : (currency === 'EUR' ? `${val.toLocaleString('es-ES', { maximumFractionDigits: 0 })} €` : `$${val.toLocaleString(undefined, { maximumFractionDigits: 0 })}`)}
-                            width={80}
-                            domain={[yMin, 'auto']}
+                            fontSize={11}
+                            tickFormatter={(val) => isPrivacyMode ? 'XXXX' : (currency === 'EUR' ? `${val.toLocaleString('es-ES', { maximumFractionDigits: 0 })}` : `$${val.toLocaleString(undefined, { maximumFractionDigits: 0 })}`)}
+                            width={50}
+                            domain={['auto', 'auto']}
                             axisLine={false}
                             tickLine={false}
                         />
                         <Tooltip
-                            contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', borderRadius: '8px', color: '#f8fafc' }}
-                            itemStyle={{ color: '#f8fafc' }}
+                            contentStyle={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', borderRadius: '8px', color: '#0f172a', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)' }}
+                            itemStyle={{ color: '#0f172a', fontWeight: 'bold' }}
                             formatter={(value, name) => [formatCurrency(value), name]}
-                            labelStyle={{ color: '#94a3b8', marginBottom: '4px' }}
+                            labelStyle={{ color: '#64748b', marginBottom: '4px', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em' }}
                         />
                         <Legend verticalAlign="top" height={36} wrapperStyle={{ paddingBottom: '10px' }} iconType="circle" />
                         <Area
                             type="monotone"
                             dataKey="invested"
                             name="Capital Aportado"
-                            stroke="#94a3b8"
+                            stroke="#cbd5e1"
                             strokeWidth={2}
                             fillOpacity={1}
                             fill="url(#colorInvested)"
+                            isAnimationActive={false}
                         />
                         <Area
                             type="monotone"
                             dataKey="value"
                             name="Valor Cartera"
-                            stroke="#3b82f6"
-                            strokeWidth={3}
+                            stroke={chartColor}
+                            strokeWidth={2.5}
                             fillOpacity={1}
                             fill="url(#colorValue)"
+                            isAnimationActive={false}
                         />
-                    </AreaChart>
+                        <Line
+                            type="monotone"
+                            dataKey="benchmark"
+                            name="Benchmark (7% CAGR)"
+                            stroke="#f59e0b"
+                            strokeWidth={1.5}
+                            strokeDasharray="4 4"
+                            dot={false}
+                            isAnimationActive={false}
+                        />
+                    </ComposedChart>
                 </ResponsiveContainer>
             </div>
         </div>

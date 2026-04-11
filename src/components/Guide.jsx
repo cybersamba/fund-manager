@@ -119,9 +119,52 @@ export default function Guide() {
                 </div>
             </section>
 
-            {/* SECCIÓN 4: CÓMO USAR LA APP */}
+            {/* SECCIÓN 4: PORTFOLIO SNOWFLAKE */}
             <section className="space-y-4">
-                <h2 className="text-2xl font-bold border-b border-gray-800 pb-2 text-white/90 mt-8">🛠️ 4. Rutina: Cómo usar esta aplicación</h2>
+                <h2 className="text-2xl font-bold border-b border-gray-800 pb-2 text-white/90 mt-8">🕸️ 4. Análisis: El 'Portfolio Snowflake'</h2>
+                
+                <div className="card space-y-4 border-indigo-500/10">
+                    <p className="text-gray-300 text-sm leading-relaxed">
+                        En la pestaña <strong>Portfolio</strong> verás un gráfico de radar en forma de copo de nieve. Este medidor te da una nota del 0 al 100 de la salud global de tus inversiones basándose en 5 pilares clave. Cuanto más se expanda el color hacia los bordes en todas las direcciones, <strong>más completa y robusta será tu estrategia</strong>.
+                    </p>
+                    <ul className="space-y-4 text-sm mt-4">
+                        <li className="flex gap-3 items-start">
+                            <span className="bg-indigo-500/20 text-indigo-400 p-1.5 rounded font-mono text-xs w-6 text-center">1</span>
+                            <div>
+                                <strong className="text-white">Eficiencia (TER):</strong> <span className="text-gray-400">Puntúa alto si inviertes en fondos indexados o con comisiones muy bajas. Se contrae si tu cartera paga demasiado a los gestores.</span>
+                            </div>
+                        </li>
+                        <li className="flex gap-3 items-start">
+                            <span className="bg-indigo-500/20 text-indigo-400 p-1.5 rounded font-mono text-xs w-6 text-center">2</span>
+                            <div>
+                                <strong className="text-white">Rendimiento (TWR):</strong> <span className="text-gray-400">Mide el éxito puro. Crecerá cuanto mayor sea la rentabilidad acumulada total que han conseguido los fondos que elegiste en el pasado.</span>
+                            </div>
+                        </li>
+                        <li className="flex gap-3 items-start">
+                            <span className="bg-indigo-500/20 text-indigo-400 p-1.5 rounded font-mono text-xs w-6 text-center">3</span>
+                            <div>
+                                <strong className="text-white">Diversidad:</strong> <span className="text-gray-400">Premia la multiplicidad. Si apuestas todo a un solo fondo, esto se hundirá indicando gran riesgo global. Aumenta al extenderte en más fondos diferentes.</span>
+                            </div>
+                        </li>
+                        <li className="flex gap-3 items-start">
+                            <span className="bg-indigo-500/20 text-indigo-400 p-1.5 rounded font-mono text-xs w-6 text-center">4</span>
+                            <div>
+                                <strong className="text-white">Seguridad:</strong> <span className="text-gray-400">Mide el riesgo. Cuanto más dinero tengas amarrado de forma segura en 'Depósitos', 'Monetarios' o 'Renta Fija', más se expande indicando inmunidad a las caídas de Bolsa.</span>
+                            </div>
+                        </li>
+                        <li className="flex gap-3 items-start">
+                            <span className="bg-indigo-500/20 text-indigo-400 p-1.5 rounded font-mono text-xs w-6 text-center">5</span>
+                            <div>
+                                <strong className="text-white">Disciplina (Mandato):</strong> <span className="text-gray-400">Puntúa al 100% cuando la distribución real de tu dinero cuadra exactamente con tu "Pesos Objetivo" de Configuración. Si te desvías mucho, pide corrección/rebalanceo.</span>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+            </section>
+
+            {/* SECCIÓN 5: CÓMO USAR LA APP */}
+            <section className="space-y-4">
+                <h2 className="text-2xl font-bold border-b border-gray-800 pb-2 text-white/90 mt-8">🛠️ 5. Rutina: Cómo usar esta aplicación</h2>
                 
                 <div className="card space-y-6">
                     <div>

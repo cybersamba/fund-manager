@@ -4,266 +4,231 @@
 
 @layer base {
   body {
-    @apply bg-background text-text antialiased;
+    background-color: #f8fafc; /* slate-50 */
+    color: #0f172a; /* slate-900 */
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
   }
 }
 
-.input-field {
-  @apply w-full bg-surface border border-gray-700 rounded-lg px-4 py-2 text-text focus:outline-none focus:ring-2 focus:ring-primary transition-all;
-}
-
-.btn-primary {
-  @apply px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg font-medium transition-all shadow-lg shadow-blue-500/20 active:scale-95;
-}
-
-.card {
-  @apply bg-surface border border-gray-800 rounded-xl p-6 shadow-xl;
-}
-
-/* ═══════════════════════════════════════════════════
-   RETRO CRT PHOSPHOR-GREEN MODE
-   ═══════════════════════════════════════════════════ */
-
-/* Blinking cursor */
-@keyframes blink-cursor {
-
-  0%,
-  49% {
-    opacity: 1;
+@layer components {
+  /* THE BENTO BOX CARD - LIGHT MODE */
+  .bento-card {
+    @apply bg-white border border-slate-200/60 rounded-[20px] shadow-premium relative overflow-hidden transition-all duration-300;
   }
 
-  50%,
-  100% {
-    opacity: 0;
-  }
-}
-
-/* Screen flicker */
-@keyframes crt-flicker {
-  0% {
-    opacity: 1;
+  /* SUBTLE HOVER EFFECT */
+  .bento-card:hover {
+    @apply border-slate-300 shadow-premium-hover;
   }
 
-  3% {
-    opacity: 0.96;
+  /* INNER METRIC PANELS OR BADGES */
+  .nano-panel {
+    @apply bg-slate-50 border border-slate-200/50 rounded-xl px-4 py-3;
   }
 
-  6% {
-    opacity: 1;
+  /* FLOATING NAVIGATION PILL */
+  .spatial-nav {
+    @apply fixed left-1/2 -translate-x-1/2 bottom-8 sm:bottom-10 z-[100] flex items-center gap-1.5 px-3 py-3 rounded-[32px] bg-white/80 border border-slate-200 backdrop-blur-2xl transition-all duration-300 shadow-nav;
   }
 
-  72% {
-    opacity: 1;
+  .spatial-nav-item {
+    @apply flex items-center gap-2 justify-center px-4 py-2.5 rounded-full text-sm font-medium transition-all duration-300 text-slate-500 hover:text-slate-900;
   }
 
-  74% {
-    opacity: 0.97;
+  .spatial-nav-item.active {
+    @apply bg-slate-900 text-white font-semibold shadow-md;
   }
 
-  76% {
-    opacity: 1;
+  /* BUTTONS - STRIPE STYLE */
+  .btn-void {
+    @apply inline-flex items-center justify-center rounded-xl bg-slate-900 text-white px-5 py-2.5 text-sm font-semibold hover:bg-slate-800 transition-colors duration-200 active:scale-95 shadow-md;
+  }
+  
+  .btn-outline {
+    @apply inline-flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-600 px-5 py-2.5 text-sm font-medium hover:bg-slate-50 hover:text-slate-900 transition-all duration-200 active:scale-95 shadow-sm;
+  }
+
+  /* INPUTS */
+  .metric-input {
+    @apply bg-white border border-slate-200 text-slate-900 rounded-xl px-4 py-3 text-sm focus:border-slate-400 focus:outline-none focus:ring-4 focus:ring-slate-100 transition-all placeholder:text-slate-400 shadow-sm;
+  }
+
+  /* GRADIENT CLIPPING FOR HUGE TEXT */
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-br from-slate-900 via-slate-700 to-slate-500;
   }
 }
 
-/* Scanline scroll */
-@keyframes scanlines {
-  0% {
-    background-position: 0 0;
-  }
-
-  100% {
-    background-position: 0 100%;
-  }
+/* CUSTOM SCROLLBAR FOR CLEANLINESS - LIGHT MODE */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1; /* slate-300 */
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8; /* slate-400 */
 }
 
-/* Phosphor text glow pulse */
-@keyframes phosphor-glow {
-
-  0%,
-  100% {
-    text-shadow: 0 0 8px #00ff41, 0 0 20px #00cc35;
-  }
-
-  50% {
-    text-shadow: 0 0 4px #00ff41, 0 0 12px #00cc35;
-  }
-}
-
+/* --- TERMINAL RETRO MODE --- */
 body.retro {
-  background: #000900 !important;
-  color: #00ff41 !important;
-  font-family: 'VT323', 'Courier New', monospace !important;
-  font-size: 18px !important;
-  animation: crt-flicker 6s infinite;
-  cursor: none;
+  background-color: #050505 !important;
+  color: #33ff00 !important;
+  font-family: 'Courier New', Courier, monospace !important;
+  text-shadow: 0 0 5px rgba(51, 255, 0, 0.5);
+  cursor: none !important;
 }
 
-/* Custom green cursor */
 body.retro * {
-  cursor: none;
+  border-color: #33ff00 !important;
+  box-shadow: none !important;
+  cursor: none !important;
+  font-family: 'Courier New', Courier, monospace !important;
 }
 
-body.retro::before {
-  /* Scanlines overlay */
-  content: '';
-  position: fixed;
-  inset: 0;
-  background: repeating-linear-gradient(0deg,
-      transparent,
-      transparent 3px,
-      rgba(0, 0, 0, 0.18) 3px,
-      rgba(0, 0, 0, 0.18) 4px);
-  pointer-events: none;
-  z-index: 9997;
-}
-
-body.retro::after {
-  /* Vignette + screen curvature glow on edges */
-  content: '';
-  position: fixed;
-  inset: 0;
-  background: radial-gradient(ellipse at center,
-      transparent 60%,
-      rgba(0, 0, 0, 0.6) 100%);
-  pointer-events: none;
-  z-index: 9998;
-}
-
-/* Global overrides for all elements in retro mode */
-body.retro .card,
-body.retro aside,
-body.retro header,
-body.retro nav {
-  background: #000900 !important;
-  border-color: #00ff41 !important;
-  color: #00ff41 !important;
-  box-shadow: 0 0 12px rgba(0, 255, 65, 0.2), inset 0 0 16px rgba(0, 255, 65, 0.05) !important;
+body.retro .bento-card, body.retro .nano-panel, body.retro .spatial-nav, body.retro .spatial-nav-item, body.retro .btn-void, body.retro .btn-outline, body.retro input {
+  border: 1px solid #33ff00 !important;
+  background: #000 !important;
+  color: #33ff00 !important;
   border-radius: 0 !important;
 }
 
-body.retro *:not(svg):not(path):not(rect):not(circle):not(line):not(polyline) {
-  color: #00ff41 !important;
-  border-color: #00562a !important;
-  border-radius: 0 !important;
-  font-family: 'VT323', 'Courier New', monospace !important;
+body.retro .text-gradient {
+  background: none !important;
+  color: #33ff00 !important;
+  -webkit-text-fill-color: #33ff00 !important;
 }
 
-body.retro input,
-body.retro select,
-body.retro textarea {
-  background: #000f03 !important;
-  border: 1px solid #00ff41 !important;
-  color: #00ff41 !important;
-  caret-color: #00ff41;
-  box-shadow: 0 0 6px rgba(0, 255, 65, 0.3) inset !important;
+body.retro .text-slate-400, body.retro .text-slate-500, body.retro .text-slate-700, body.retro .text-slate-900,
+body.retro .text-emerald-600, body.retro .text-rose-600, body.retro .text-indigo-600, body.retro .text-amber-500, body.retro .text-white, body.retro svg {
+  color: #33ff00 !important;
 }
 
-body.retro button {
-  background: #000f03 !important;
-  border: 1px solid #00ff41 !important;
-  color: #00ff41 !important;
-  box-shadow: 0 0 8px rgba(0, 255, 65, 0.25) !important;
+body.retro .bg-slate-50, body.retro .bg-slate-100, body.retro .bg-slate-200, body.retro .bg-slate-300, body.retro .bg-slate-900,
+body.retro .bg-emerald-500, body.retro .bg-amber-500, body.retro .bg-white, body.retro .bg-indigo-50 {
+  background-color: transparent !important;
 }
 
-body.retro button:hover {
-  background: rgba(0, 255, 65, 0.15) !important;
-  box-shadow: 0 0 16px rgba(0, 255, 65, 0.5) !important;
-}
-
-body.retro button:disabled {
-  opacity: 0.3 !important;
-}
-
-body.retro h1,
-body.retro h2,
-body.retro h3 {
-  text-shadow: 0 0 10px #00ff41, 0 0 25px #00cc35 !important;
-  animation: phosphor-glow 3s ease-in-out infinite !important;
-  letter-spacing: 0.05em !important;
-}
-
-/* SVG icons: tint green */
-body.retro svg {
-  filter: drop-shadow(0 0 4px #00ff41);
-  color: #00ff41 !important;
-}
-
-/* Active nav item */
-body.retro .bg-blue-500\/10,
-body.retro .bg-success\/10,
-body.retro .bg-indigo-600\/20,
-body.retro .bg-indigo-900\/20,
-body.retro .bg-emerald-500\/5 {
-  background: rgba(0, 255, 65, 0.08) !important;
-}
-
-/* Charts */
-body.retro .recharts-surface {
-  filter: hue-rotate(100deg) saturate(2) brightness(1.2);
-}
-
-/* Blinking cursor element */
-.retro-caret {
-  display: none;
-}
-
-body.retro .retro-caret {
-  display: inline-block;
-  width: 10px;
-  height: 18px;
-  background: #00ff41;
-  margin-left: 4px;
-  vertical-align: middle;
-  box-shadow: 0 0 8px #00ff41;
-  animation: blink-cursor 1s step-end infinite;
-}
-
-/* Override gradient backgrounds */
-body.retro [class*="from-"],
-body.retro [class*="to-"],
-body.retro [class*="via-"] {
-  background: #000900 !important;
-}
-
-/* Scrollbar */
-body.retro ::-webkit-scrollbar {
-  width: 8px;
-  background: #000;
-}
-
-body.retro ::-webkit-scrollbar-thumb {
-  background: #00ff41;
-  box-shadow: 0 0 6px #00ff41;
-}
-
-/* Positive/negative overrides (green is now "normal", use bright vs dim) */
-body.retro .text-success,
-body.retro .text-green-400,
-body.retro .text-emerald-400 {
-  text-shadow: 0 0 8px #00ff41 !important;
-}
-
-body.retro .text-danger,
-body.retro .text-red-400,
-body.retro .text-red-500 {
-  color: #ff4141 !important;
-  text-shadow: 0 0 8px #ff4141 !important;
-}
-
-/* Real blinking cursor overlay follower */
 #retro-cursor {
   display: none;
   position: fixed;
   width: 10px;
-  height: 18px;
-  background: #00ff41;
+  height: 20px;
+  background-color: #33ff00;
   pointer-events: none;
-  z-index: 99999;
-  box-shadow: 0 0 10px #00ff41, 0 0 20px #00cc35;
-  animation: blink-cursor 1s step-end infinite;
-  transform: translate(-2px, -16px);
+  z-index: 9999;
+  box-shadow: 0 0 8px #33ff00;
+  animation: blink 1s step-end infinite;
+  transform: translate(-50%, -50%);
 }
 
 body.retro #retro-cursor {
   display: block;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* --- WALL ST DARK MODE --- */
+body.wallst {
+  background-color: #0b1120 !important;
+  color: #f8fafc !important;
+}
+
+body.wallst .text-gradient {
+  background-image: linear-gradient(135deg, #f8fafc 0%, #94a3b8 100%) !important;
+  color: transparent !important;
+}
+
+body.wallst .bento-card, body.wallst .nano-panel, body.wallst .spatial-nav {
+  background: #1e293b !important;
+  border-color: transparent !important;
+  box-shadow: 0 4px 20px -2px rgba(0,0,0,0.4) !important;
+}
+
+body.wallst .bg-white, body.wallst .bg-slate-50, body.wallst .bg-slate-100, body.wallst .bg-indigo-50, body.wallst .bg-sky-50 {
+  background-color: transparent !important;
+}
+
+body.wallst .text-slate-900, body.wallst .text-slate-800, body.wallst .text-slate-700 {
+  color: #f8fafc !important;
+}
+
+body.wallst .text-slate-500, body.wallst .text-slate-400 {
+  color: #94a3b8 !important;
+}
+
+body.wallst .border-slate-200, body.wallst .border-slate-100 {
+  border-color: #334155 !important;
+}
+
+body.wallst input, body.wallst select {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}
+
+/* Fix table row hovers locally */
+body.wallst tr:hover { background-color: #0f172a !important; }
+body.wallst .metric-input { box-shadow: none !important; }
+
+/* Keep specific text colors intact */
+body.wallst .text-emerald-500, body.wallst .text-emerald-600 { color: #10b981 !important; }
+body.wallst .text-rose-500, body.wallst .text-rose-600 { color: #f43f5e !important; }
+body.wallst .text-indigo-600 { color: #818cf8 !important; }
+body.wallst .text-sky-600 { color: #38bdf8 !important; }
+body.wallst .text-cyan-600 { color: #22d3ee !important; }
+body.wallst .text-amber-500 { color: #f59e0b !important; }
+
+/* --- CRT EFFECTS --- */
+body.retro::before {
+  content: "";
+  display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
+  z-index: 9998;
+  background-size: 100% 2px, 3px 100%;
+  pointer-events: none;
+}
+
+body.retro::after {
+  content: "";
+  display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  background: radial-gradient(circle, rgba(0,0,0,0) 70%, rgba(0,0,0,0.2) 100%);
+  z-index: 9999;
+  pointer-events: none;
+}
+
+@keyframes textShadow {
+  0%, 100% { text-shadow: 0 0 3px rgba(51, 255, 0, 0.4); opacity: 1; }
+  92% { text-shadow: 0 0 3px rgba(51, 255, 0, 0.4); opacity: 1; }
+  93% { text-shadow: 0.5px 0 1px rgba(0, 30, 255, 0.3), -0.5px 0 1px rgba(255, 0, 80, 0.2), 0 0 4px rgba(51, 255, 0, 0.5); opacity: 0.96; }
+  96% { text-shadow: 0 0 3px rgba(51, 255, 0, 0.4); opacity: 1; }
+  97% { text-shadow: -0.5px 0 1px rgba(0, 30, 255, 0.2), 0.5px 0 1px rgba(255, 0, 80, 0.2), 0 0 3px rgba(51, 255, 0, 0.4); opacity: 0.98; }
+  99% { text-shadow: 0 0 3px rgba(51, 255, 0, 0.4); opacity: 1; }
+}
+
+body.retro {
+  animation: textShadow 6s infinite;
 }
