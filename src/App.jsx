@@ -11,7 +11,115 @@ import Watchlist from './components/Watchlist';
 import Simulation from './components/Simulation';
 import Guide from './components/Guide';
 import HistoricalChart from './components/HistoricalChart';
-import { getMatchingFundKey, calculateMWR, calculateTrailingReturn, calculateMonthlyReturns, calculateMaxDrawdown, calculateCorrelation, calculatePortfolioState } from './utils/helpers';
+import { getMatchingFundKey, calculateMWR, calculateTrailingReturn, calculateMonthlyReturns, calculateMaxDrawdown, calculateCorrelation } from './utils/helpers';
+
+const calculatePortfolioState = (orders, currentNavs, historicalNavs, janNavs, fundConfigs) => {
+    if (!orders || orders.length === 0) return { 
+        holdings: {}, 
+        totalValuation: 0, 
+        totalInvested: 0, 
+        totalRealizedProfit: 0,
+        globalMWR: 0,
+        validOrders: []
+    };
+
+    const validOrders = orders.filter(o => 
+        o.type !== 'system_cash' && 
+        o.date && !isNaN(new Date(o.date).getTime()) &&
+        !isNaN(parseFloat(o.amount))
+    );
+    const regularOrders = validOrders;
+    const now = new Date();
+    let totalRealizedProfit = 0;
+
+    const holdings = regularOrders.slice().reverse().reduce((acc, order) => {
+        const name = order.fundName;
+        if (!acc[name]) {
+            acc[name] = { shares: 0, invested: 0, buyLots: [], broker: order.broker, isDeposit: order.type === 'deposit', deposits: [] };
+        }
+
+        let s = order.shares || (order.nav > 0 ? order.amount / order.nav : 0);
+        if (order.type === 'buy') {
+            acc[name].shares += s;
+            acc[name].invested += order.amount;
+            acc[name].buyLots.push({ shares: s, amount: order.amount, nav: order.nav || (s > 0 ? order.amount / s : 0) });
+        } else if (order.type === 'sell') {
+            let sharesToSell = s;
+            let costBasisDeducted = 0;
+            for (let lot of acc[name].buyLots) {
+                if (sharesToSell <= 0) break;
+                if (lot.shares > 0) {
+                    const sellFromLot = Math.min(lot.shares, sharesToSell);
+                    const ratio = sellFromLot / lot.shares;
+                    costBasisDeducted += lot.amount * ratio;
+                    lot.shares -= sellFromLot;
+                    lot.amount -= lot.amount * ratio;
+                    sharesToSell -= sellFromLot;
+                }
+            }
+            acc[name].shares -= s;
+            acc[name].invested -= costBasisDeducted;
+            totalRealizedProfit += (order.amount - costBasisDeducted);
+        } else if (order.type === 'deposit') {
+            acc[name].invested += order.amount;
+            acc[name].deposits.push(order);
+        }
+        return acc;
+    }, {});
+
+    let totalValuation = 0;
+    let totalInvested = 0;
+
+    Object.entries(holdings).forEach(([name, data]) => {
+        totalInvested += data.invested;
+        if (data.isDeposit) {
+            let val = 0;
+            data.deposits.forEach(dep => {
+                const duration = dep.duration || 12;
+                const rate = dep.interestRate !== undefined ? dep.interestRate : (dep.interestrate || 0);
+                const maturityDate = new Date(new Date(dep.date).setMonth(new Date(dep.date).getMonth() + duration));
+                if (now >= maturityDate) {
+                    val += dep.amount + (dep.amount * (rate / 100) * (duration / 12));
+                } else {
+                    val += dep.amount;
+                }
+            });
+            data.currentValuation = val;
+        } else {
+            const matchKey = getMatchingFundKey(currentNavs, name);
+            const nav = currentNavs[matchKey] || (data.shares > 0 ? data.invested / data.shares : 0);
+            data.currentValuation = data.shares * nav;
+            data.nav = nav;
+        }
+        totalValuation += data.currentValuation;
+    });
+
+    const validOrdersForMwr = regularOrders.filter(o => ['buy', 'sell', 'deposit'].includes(o.type));
+    const rawMwr = calculateMWR(validOrdersForMwr, totalValuation);
+    const globalMWR = isNaN(rawMwr) ? 0 : rawMwr;
+
+    Object.entries(holdings).forEach(([name, data]) => {
+        const fundOrders = validOrdersForMwr.filter(o => o.fundName === name);
+        if (fundOrders.length > 0) {
+            const matchKey = getMatchingFundKey(janNavs, name);
+            const janNav = janNavs[matchKey] || 0;
+            const currentNav = data.nav || 0;
+            const rawYtd = janNav > 0 ? ((currentNav / janNav) - 1) * 100 : 0;
+            data.ytdReturn = isNaN(rawYtd) ? 0 : rawYtd;
+            const rawFundMwr = data.currentValuation > 0 ? calculateMWR(fundOrders, data.currentValuation) : 0;
+            data.mwrAnnual = isNaN(rawFundMwr) ? 0 : rawFundMwr;
+        }
+    });
+
+    return { 
+        holdings, 
+        totalValuation: isNaN(totalValuation) ? 0 : totalValuation, 
+        totalInvested: isNaN(totalInvested) ? 0 : totalInvested, 
+        totalRealizedProfit: isNaN(totalRealizedProfit) ? 0 : totalRealizedProfit, 
+        globalMWR, 
+        validOrders: validOrdersForMwr 
+    };
+};
 import MonthlyHeatmap from './components/MonthlyHeatmap';
 import FIRESimulator from './components/FIRESimulator';
 import CorrelationMatrix from './components/CorrelationMatrix';
