@@ -1,7 +1,7 @@
 import React from 'react';
 import { Wallet, PieChart as PieChartIcon, ArrowRightLeft, TrendingUp, TrendingDown, Target, Info, Landmark, Coins, ShieldCheck, Activity, PiggyBank } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, LineChart, Line, YAxis, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
-import { getMatchingFundKey, calculateMWR, calculateTWR } from '../utils/helpers';
+import { getMatchingFundKey } from '../utils/helpers';
 
 // Helper to guess asset class from name if not provided
 const guessAssetClass = (name) => {

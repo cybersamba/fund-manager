@@ -70,7 +70,42 @@ export const calculateMWR = (orders, currentValuation) => {
     return r * 100;
 };
 
-// ... keep existing calculateTWR and calculateTrailingReturn ...
+/**
+ * Calculates Time-Weighted Return (TWR)
+ */
+export const calculateTWR = (startNav, endNav) => {
+    if (startNav <= 0 || endNav <= 0) return 0;
+    return ((endNav / startNav) - 1) * 100;
+};
+
+/**
+ * Calculates Trailing Return (YTD, 1Y, 3Y, etc)
+ * @param {Array} history - Array of [timestamp, nav]
+ * @param {number} currentNav - Current NAV
+ * @param {number} years - Years to look back (default 1)
+ */
+export const calculateTrailingReturn = (history, currentNav, years = 1) => {
+    if (!currentNav || !history || history.length === 0) return 0;
+
+    const periodDays = years * 365.25;
+    const targetDate = new Date();
+    targetDate.setDate(targetDate.getDate() - periodDays);
+    const targetTs = targetDate.getTime();
+
+    let startNav = 0;
+    // Find closest NAV at or before target date
+    for (let i = history.length - 1; i >= 0; i--) {
+        if (history[i][0] <= targetTs) {
+            startNav = history[i][1];
+            break;
+        }
+    }
+
+    if (!startNav && history.length > 0) startNav = history[0][1];
+    if (!startNav || startNav <= 0) return 0;
+
+    return ((currentNav / startNav) - 1) * 100;
+};
 
 /**
  * Calculates monthly returns for a heatmap matrix
@@ -165,7 +200,17 @@ export const calculateMonthlyReturns = (orders, historicalNavs, currentNavs, fun
         }
 
         if (Math.abs(monthlyReturn) < 0.00001) monthlyReturn = 0;
-        results.push({ year, month, return: monthlyReturn * 100 });
+        
+        // Track cumulative performance for drawdown calculation
+        const lastValue = results.length > 0 ? results[results.length - 1].endValue : 100;
+        const endValue = lastValue * (1 + monthlyReturn);
+
+        results.push({ 
+            year, 
+            month, 
+            return: monthlyReturn * 100,
+            endValue: endValue
+        });
         
         currentDate.setMonth(currentDate.getMonth() + 1);
     }
