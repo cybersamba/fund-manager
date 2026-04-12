@@ -931,6 +931,7 @@ function App() {
                             totalCarteraValorada={totalCarteraValorada} 
                             fundConfigs={fundConfigs}
                             formatCurrency={formatCurrency}
+                            currentNavs={currentNavs}
                         />
                     </div>
                 </div>
