@@ -36,15 +36,15 @@ export default function SmartAssistant({ currentHoldings, totalCarteraValorada, 
         });
 
         // Normalize so total matches investmentAmount if we only buy
-        const totalNeeded = plan.reduce((sum, p) => sum + p.amount, 0);
+        const totalNeeded = plan.reduce((sum, p) => sum + (p.amount || 0), 0);
         
-        if (totalNeeded <= 0) return [];
+        if (isNaN(totalNeeded) || totalNeeded <= 0) return [];
 
         return plan.map(p => ({
             ...p,
-            optimizedAmount: (p.amount / totalNeeded) * investmentAmount
-        })).filter(p => p.optimizedAmount > 0.01) // Ignore dust
-           .sort((a, b) => b.optimizedAmount - a.optimizedAmount);
+            optimizedAmount: totalNeeded > 0 ? (p.amount / totalNeeded) * investmentAmount : 0
+        })).filter(p => p.optimizedAmount > 0.01 && !isNaN(p.optimizedAmount)) // Ignore dust & NaN
+           .sort((a, b) => (b.optimizedAmount || 0) - (a.optimizedAmount || 0));
 
     }, [currentHoldings, totalCarteraValorada, fundConfigs, investmentAmount, currentNavs]);
 

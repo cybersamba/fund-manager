@@ -533,6 +533,18 @@ function App() {
         }
     };
 
+    const portfolioState = useMemo(() => {
+        if (!Array.isArray(orders) || orders.length === 0) {
+            return { holdings: {}, totalValuation: 0, totalInvested: 0, totalRealizedProfit: 0, globalMWR: 0, validOrders: [] };
+        }
+        try {
+            return calculatePortfolioState(orders, currentNavs, historicalNavs, janNavs, fundConfigs);
+        } catch (e) {
+            console.error("Math engine failed:", e);
+            return { holdings: {}, totalValuation: 0, totalInvested: 0, totalRealizedProfit: 0, globalMWR: 0, validOrders: [] };
+        }
+    }, [orders, currentNavs, historicalNavs, janNavs, fundConfigs]);
+
     const { 
         holdings: currentHoldings, 
         totalValuation: totalCarteraValorada, 
@@ -540,9 +552,7 @@ function App() {
         totalRealizedProfit, 
         globalMWR, 
         validOrders 
-    } = useMemo(() => {
-        return calculatePortfolioState(orders, currentNavs, historicalNavs, janNavs, fundConfigs);
-    }, [orders, currentNavs, historicalNavs, janNavs, fundConfigs]);
+    } = portfolioState;
 
     const plusvaliaLatente = totalCarteraValorada - totalCapitalAportado;
     const plusvalia = plusvaliaLatente + totalRealizedProfit;
@@ -677,7 +687,7 @@ function App() {
                                 <span>Tasa Interna (TIR)</span><span className="text-slate-300 cursor-help" title="Tasa Interna de Retorno">?</span>
                             </div>
                             <div className={`text-3xl font-extrabold tracking-tight ${globalMWR >= 0 && !isPrivacyMode ? 'text-slate-900' : 'text-rose-600'}`}>
-                                {isPrivacyMode ? 'XX.X%' : `${globalMWR >= 0 ? '+' : ''}${globalMWR.toFixed(2)}%`}
+                                {isPrivacyMode ? 'XX.X%' : `${globalMWR >= 0 ? '+' : ''}${(globalMWR || 0).toFixed(2)}%`}
                             </div>
                         </div>
 
@@ -689,8 +699,8 @@ function App() {
                             </div>
                             <div className="flex flex-col gap-1 text-[9px] font-mono font-bold text-slate-500 uppercase">
                                 <div className="flex items-center gap-1.5 justify-between">
-                                    <span>ROI {(fundRentabilidad >= 0 ? '+' : '')}{fundRentabilidad.toFixed(2)}%</span>
-                                    <span className="text-rose-400 font-medium">DRAWDOWN {isPrivacyMode ? 'X.X%' : `${maxDrawdown.toFixed(1)}%`}</span>
+                                    <span>ROI {(fundRentabilidad >= 0 ? '+' : '')}${(fundRentabilidad || 0).toFixed(2)}%</span>
+                                    <span className="text-rose-400 font-medium">DRAWDOWN {isPrivacyMode ? 'X.X%' : `${(maxDrawdown || 0).toFixed(1)}%`}</span>
                                 </div>
                                 <div className="flex items-center gap-1.5 justify-between">
                                     <span>INFLACIÓN. {isPrivacyMode ? '***' : formatCurrency(inflationHurdleCost)}</span>

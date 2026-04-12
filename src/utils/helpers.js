@@ -311,7 +311,14 @@ export const calculateCorrelation = (historicalNavs) => {
  * This eliminates duplication and ensures all views use the same math.
  */
 export const calculatePortfolioState = (orders, currentNavs, historicalNavs, janNavs, fundConfigs) => {
-    if (!orders || orders.length === 0) return { holdings: {}, totalValuation: 0, totalInvested: 0, globalMWR: 0 };
+    if (!orders || orders.length === 0) return { 
+        holdings: {}, 
+        totalValuation: 0, 
+        totalInvested: 0, 
+        totalRealizedProfit: 0,
+        globalMWR: 0,
+        validOrders: []
+    };
 
     const validOrders = orders.filter(o => 
         o.type !== 'system_cash' && 
