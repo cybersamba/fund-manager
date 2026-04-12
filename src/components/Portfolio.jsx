@@ -30,116 +30,37 @@ export default function Portfolio({ orders, currentNavs, historicalNavs, janNavs
     const activeHoldings = Object.entries(currentHoldings || {})
         .filter(([_, data]) => data.shares > 0 || data.invested !== 0)
         .map(([fundName, data]) => {
-            if (data.isDeposit) {
-                let currentValorado = 0;
-                let maturedProfits = 0;
-                data.deposits.forEach(dep => {
-                    const startDate = new Date(dep.date);
-                    const maturityDate = new Date(startDate);
-                    const duration = dep.duration || dep.duration_months || 12;
-                    const rate = dep.interestRate !== undefined ? dep.interestRate : 
-                               (dep.interestrate !== undefined ? dep.interestrate : 
-                               (dep.interest_rate !== undefined ? dep.interest_rate : 0));
-
-                    maturityDate.setMonth(maturityDate.getMonth() + duration);
-                    maturityDate.setHours(23, 59, 59, 999);
-
-                    if (new Date() >= maturityDate) {
-                        const profit = dep.amount * (parseFloat(rate) / 100) * (duration / 12);
-                        maturedProfits += profit;
-                        currentValorado += (dep.amount + profit);
-                    } else {
-                        currentValorado += dep.amount;
-                    }
-                });
-
-                let totalInterestRate = 0;
-                if (data.deposits && data.deposits.length > 0) {
-                    totalInterestRate = data.deposits.reduce((acc, d) => {
-                        const rate = d.interestRate !== undefined ? d.interestRate : 
-                                   (d.interestrate !== undefined ? d.interestrate : 
-                                   (d.interest_rate !== undefined ? d.interest_rate : 0));
-                        return acc + (parseFloat(rate) || 0);
-                    }, 0) / data.deposits.length;
-                }
-
-                const currentPercent = totalCarteraValorada > 0 ? (currentValorado / totalCarteraValorada) * 100 : 0;
-                const config = fundConfigs[fundName] || {};
-                const targetPercent = config.targetPercent || 0;
-
-                return {
-                    fundName: `DEP: ${fundName}`, broker: data.broker || 'ING', assetClass: config.assetClass || 'deposito',
-                    shares: 0, invested: data.invested, nav: 0,
-                    currentValorado, currentPercent, targetPercent,
-                    deviation: currentPercent - targetPercent,
-                    rebalanceAmount: (totalCarteraValorada * (targetPercent / 100)) - currentValorado,
-                    totalProfitPct: (data.invested > 0 ? (maturedProfits / data.invested) * 100 : 0),
-                    annualReturn: totalInterestRate, 
-                    twrTotal: (data.invested > 0 ? (maturedProfits / data.invested) * 100 : 0),
-                    twrAnnual: totalInterestRate,
-                    mwrAnnual: totalInterestRate,
-                    ytdReturn: totalInterestRate, 
-                    sparklineData: [],
-                    ter: 0, terCost: 0
-                };
-            }
-
-            const matchKey = getMatchingFundKey(currentNavs, fundName);
-            const fallbackNav = data.shares > 0 ? (data.invested / data.shares) : 0;
-            const nav = currentNavs[matchKey] || fallbackNav;
-            const janNav = janNavs ? janNavs[matchKey] || nav : nav;
-
-            let currentValorado = data.shares * nav;
-            if (data.shares === 0 && data.invested !== 0) {
-                currentValorado = data.invested;
-            }
-
-            const fundOrders = (orders || [])
-                .filter(o => o.fundName === fundName)
-                .sort((a, b) => new Date(a.date) - new Date(b.date));
-
-            if (fundOrders.length === 0) return null;
-
-            const firstOrder = fundOrders[0];
-            const firstNav = firstOrder.nav || (data.invested / data.shares);
-
-            const now = new Date();
-            const totalDaysSinceStart = (now - new Date(firstOrder.date)) / (1000 * 60 * 60 * 24);
-            const totalYearsSinceStart = totalDaysSinceStart / 365.25;
-
-            const ytdReturn = janNav > 0 ? ((nav / janNav) - 1) * 100 : 0;
-            const totalProfitPct = data.invested > 0 ? ((currentValorado / data.invested) - 1) * 100 : 0;
-
             const config = fundConfigs[fundName] || {};
+            const currentPercent = totalCarteraValorada > 0 ? (data.currentValuation / totalCarteraValorada) * 100 : 0;
             const targetPercent = config.targetPercent || 0;
-            const currentPercent = totalCarteraValorada > 0 ? (currentValorado / totalCarteraValorada) * 100 : 0;
-
-            const targetValuation = totalCarteraValorada * (targetPercent / 100);
 
             const sparklineData = [];
-            if (historicalNavs && historicalNavs[matchKey]) {
-                const navsArr = historicalNavs[matchKey];
-                const recent = navsArr.slice(-60);
-                recent.forEach(([ts, n]) => sparklineData.push({ nav: parseFloat(n), time: ts }));
-            }
-
-            const twrTotal = calculateTWR(firstNav, nav);
-            const mwrAnnual = calculateMWR(fundOrders, currentValorado);
-            
-            let twrAnnual = 0;
-            if (totalYearsSinceStart > 0 && (1 + twrTotal/100) > 0) {
-                twrAnnual = (Math.pow(1 + twrTotal/100, 1 / totalYearsSinceStart) - 1) * 100;
+            if (historicalNavs) {
+                const matchKey = getMatchingFundKey(historicalNavs, fundName);
+                const navsArr = historicalNavs[matchKey] || [];
+                navsArr.slice(-60).forEach(([ts, n]) => sparklineData.push({ nav: parseFloat(n), time: ts }));
             }
 
             return {
-                fundName, broker: data.broker || 'MyInvestor', assetClass: config.assetClass || guessAssetClass(fundName), shares: data.shares, invested: data.invested, nav,
-                currentValorado, currentPercent, targetPercent, 
-                deviation: currentPercent - targetPercent, 
-                rebalanceAmount: targetValuation - currentValorado,
-                totalProfitPct, annualReturn: twrAnnual, firstBuyNav: firstNav,
-                firstOrderDate: firstOrder.date,
-                twrTotal, twrAnnual, mwrAnnual, ytdReturn, sparklineData,
-                ter: config.ter || 0, terCost: currentValorado * ((config.ter || 0) / 100)
+                fundName,
+                broker: data.broker || 'Broker',
+                assetClass: config.assetClass || (data.isDeposit ? 'deposito' : guessAssetClass(fundName)),
+                shares: data.shares,
+                invested: data.invested,
+                nav: data.nav,
+                currentValorado: data.currentValuation,
+                currentPercent,
+                targetPercent,
+                deviation: currentPercent - targetPercent,
+                rebalanceAmount: (totalCarteraValorada * (targetPercent / 100)) - data.currentValuation,
+                totalProfitPct: data.invested > 0 ? ((data.currentValuation / data.invested) - 1) * 100 : 0,
+                annualReturn: data.twrAnnual || 0,
+                twrAnnual: data.twrAnnual || 0,
+                mwrAnnual: data.mwrAnnual || 0,
+                ytdReturn: data.ytdReturn || 0,
+                sparklineData,
+                ter: config.ter || 0,
+                terCost: data.currentValuation * ((config.ter || 0) / 100)
             };
         })
         .sort((a, b) => b.currentValorado - a.currentValorado);
@@ -177,7 +98,7 @@ export default function Portfolio({ orders, currentNavs, historicalNavs, janNavs
     };
     const colorIndexes = { 'renta-variable': 0, 'renta-fija': 0, 'monetario': 0, 'deposito': 0 };
 
-    const chartData = activeHoldings.map(h => {
+    const chartDataFiltered = activeHoldings.map(h => {
         const cls = h.assetClass || 'renta-variable';
         const palette = ASSET_PALETTES[cls] || ASSET_PALETTES['renta-variable'];
         const fillColor = palette[colorIndexes[cls] % palette.length];
@@ -240,7 +161,7 @@ export default function Portfolio({ orders, currentNavs, historicalNavs, janNavs
                         <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                                 <Pie
-                                    data={chartData}
+                                    data={chartDataFiltered}
                                     cx="50%"
                                     cy="50%"
                                     innerRadius={55}
@@ -252,7 +173,7 @@ export default function Portfolio({ orders, currentNavs, historicalNavs, janNavs
                                     label={renderCustomizedLabel}
                                     labelLine={false}
                                 >
-                                    {chartData.map((entry, index) => (
+                                    {chartDataFiltered.map((entry, index) => (
                                         <Cell key={`cell-${index}`} fill={entry.fillColor} />
                                     ))}
                                 </Pie>
@@ -383,7 +304,7 @@ export default function Portfolio({ orders, currentNavs, historicalNavs, janNavs
                                     
                                     <td className="p-5 text-right">
                                         <div className="text-slate-900 font-semibold">{formatCurrency(h.currentValorado)}</div>
-                                        <div className="text-[10px] text-slate-400 mt-1">{((h.currentValorado / totalCarteraValorada) * 100).toFixed(1)}% ({h.targetPercent}%)</div>
+                                        <div className="text-[10px] text-slate-400 mt-1">{h.currentPercent.toFixed(1)}% ({h.targetPercent}%)</div>
                                     </td>
                                     
                                     <td className="p-5 text-center">
@@ -398,7 +319,7 @@ export default function Portfolio({ orders, currentNavs, historicalNavs, janNavs
                                                 <ResponsiveContainer width="100%" height="100%">
                                                     <LineChart data={h.sparklineData} margin={{ top: 5, bottom: 5, left: 2, right: 2 }}>
                                                         <YAxis hide domain={['dataMin', 'dataMax']} />
-                                                        <Line type="monotone" dataKey="nav" stroke={h.sparklineData[0].nav <= h.sparklineData[h.sparklineData.length - 1].nav ? '#10b981' : '#ca8a04'} strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                                                        <Line type="monotone" dataKey="nav" stroke={h.ytdReturn >= 0 ? '#10b981' : '#ca8a04'} strokeWidth={1.5} dot={false} isAnimationActive={false} />
                                                     </LineChart>
                                                 </ResponsiveContainer>
                                             </div>

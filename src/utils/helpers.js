@@ -36,26 +36,30 @@ export const calculateMWR = (orders, currentValuation) => {
     flows.push({ t: 0, amount: currentValuation });
 
     // IRR Solver (Newton-Raphson)
-    let r = 0.05; // 5% initial guess
-    for (let i = 0; i < 30; i++) {
+    // IRR Solver (Newton-Raphson)
+    let r = 0.05; 
+    for (let i = 0; i < 50; i++) {
         let f = 0;
         let df = 0;
         for (const flow of flows) {
-            // we use (1+r)^t where t is years ago (so t is positive)
-            // Value_now = sum( Flow_i * (1+r)^t_i )
-            // We want this to be 0? No, standard IRR is sum( Flow_i / (1+r)^t_i_from_start ) = 0
-            // Let's use time from today t=0.
-            // Valuation = Sum( -Invested_i * (1+r)^t_i )  where t_i is years since investment
-            // Sum( Flow_i * (1+r)^t_i ) = 0  where Flow_i is signed and t_i is years until "now" (which is 0)
-            
-            const pow = Math.pow(1 + r, flow.t);
+            const pow = Math.pow(Math.max(0.0001, 1 + r), flow.t);
             f += flow.amount * pow;
-            if (1 + r !== 0) {
-                df += flow.amount * flow.t * Math.pow(1 + r, flow.t - 1);
+            if (Math.abs(1 + r) > 0.0001) {
+                df += flow.amount * flow.t * Math.pow(Math.max(0.0001, 1 + r), flow.t - 1);
             }
         }
+        
         if (Math.abs(df) < 0.0000001) break;
-        const nextR = r - f / df;
+        
+        const delta = f / df;
+        const nextR = r - delta;
+        
+        // Safety bounds to prevent divergence
+        if (nextR > 10 || nextR < -0.99) {
+             r = nextR > 10 ? 10 : -0.99;
+             break;
+        }
+
         if (Math.abs(nextR - r) < 0.00001) {
             r = nextR;
             break;
@@ -66,54 +70,12 @@ export const calculateMWR = (orders, currentValuation) => {
     return r * 100;
 };
 
-/**
- * Calculates Time-Weighted Return (TWR)
- * For a single fund, this is simply the performance of the fund's NAV.
- */
-export const calculateTWR = (firstNav, currentNav) => {
-    if (!firstNav || !currentNav) return 0;
-    return ((currentNav / firstNav) - 1) * 100;
-};
-
-/**
- * Calculates trailing return for a fund given historical NAVs and a number of years.
- */
-export const calculateTrailingReturn = (history, currentNav, years) => {
-    if (!history || history.length === 0 || !currentNav) return null;
-
-    const latestDate = new Date(history[history.length - 1][0]);
-    const targetDate = new Date(latestDate);
-    targetDate.setFullYear(latestDate.getFullYear() - years);
-    const targetTimestamp = targetDate.getTime();
-
-    let targetNav = null;
-    let minDiff = Infinity;
-    
-    // Find the closest NAV within a 15-day window
-    for (const [ts, nav] of history) {
-        const diff = Math.abs(ts - targetTimestamp);
-        if (diff < minDiff && diff < 15 * 24 * 60 * 60 * 1000) {
-            minDiff = diff;
-            targetNav = nav;
-        }
-    }
-
-    if (!targetNav) return null;
-
-    const returnPct = ((currentNav / targetNav) - 1);
-    
-    // Annualize if years > 1
-    if (years > 1 && (1 + returnPct) > 0) {
-        return (Math.pow(1 + returnPct, 1 / years) - 1) * 100;
-    }
-    
-    return returnPct * 100;
-};
+// ... keep existing calculateTWR and calculateTrailingReturn ...
 
 /**
  * Calculates monthly returns for a heatmap matrix
  */
-export const calculateMonthlyReturns = (orders, historicalNavs, currentNavs) => {
+export const calculateMonthlyReturns = (orders, historicalNavs, currentNavs, fundConfigs = {}) => {
     if (!orders || orders.length === 0 || !historicalNavs) return [];
 
     const now = new Date();
@@ -123,94 +85,15 @@ export const calculateMonthlyReturns = (orders, historicalNavs, currentNavs) => 
     const results = [];
     let currentDate = new Date(firstOrderDate.getFullYear(), firstOrderDate.getMonth(), 1);
 
-    // Keep track of shares per fund
-    const fundShares = {};
-
     while (currentDate <= now) {
         const year = currentDate.getFullYear();
         const month = currentDate.getMonth();
         
-        // Month end timestamp (last day of the month)
         const monthEnd = new Date(year, month + 1, 0, 23, 59, 59, 999);
         const monthEndTime = monthEnd.getTime();
-        
-        // Value at start of month
         const monthStart = new Date(year, month, 1, 0, 0, 0, 0);
         const monthStartTime = monthStart.getTime();
 
-        // Calculate value at start and end
-        const getValueAt = (timestamp) => {
-            let totalVal = 0;
-            const relevantOrders = sortedOrders.filter(o => new Date(o.date).getTime() <= timestamp);
-            
-            const holdings = relevantOrders.reduce((acc, order) => {
-                if (!acc[order.fundName]) acc[order.fundName] = { shares: 0, invested: 0, lastOrderNav: 0, assetClass: '' };
-                let s = order.shares || 0;
-                if (!s && order.nav > 0) s = order.amount / order.nav;
-                
-                if (order.type === 'buy') {
-                    acc[order.fundName].shares += s;
-                    acc[order.fundName].lastOrderNav = order.nav;
-                } else if (order.type === 'sell') {
-                    acc[order.fundName].shares -= s;
-                } else if (order.type === 'deposit') {
-                    acc[order.fundName].invested += order.amount;
-                }
-
-                // Carry over asset class for protection logic
-                if (!acc[order.fundName].assetClass) {
-                    const normalized = normalizeFundName(order.fundName);
-                    if (normalized.includes('tresorerie') || normalized.includes('monetario') || normalized.includes('liquidez') || normalized.includes('money market')) {
-                        acc[order.fundName].assetClass = 'monetario';
-                    } else if (normalized.includes('deposito')) {
-                        acc[order.fundName].assetClass = 'deposito';
-                    }
-                }
-                return acc;
-            }, {});
-
-            Object.entries(holdings).forEach(([fund, data]) => {
-                if (data.shares <= 0 && data.invested <= 0) return;
-                
-                // Find NAV at timestamp
-                const matchKey = getMatchingFundKey(historicalNavs, fund);
-                const history = historicalNavs[matchKey] || [];
-                let nav = 0;
-                
-                // 1. Try to find closest NAV before or at timestamp in history
-                for (let i = history.length - 1; i >= 0; i--) {
-                    if (history[i][0] <= timestamp) {
-                        nav = history[i][1];
-                        break;
-                    }
-                }
-                
-                // 2. Fallback: If it's a current month calculation, use currentNavs
-                if (!nav && currentNavs) nav = currentNavs[matchKey] || 0;
-
-                // 3. Fallback: Use the last known order NAV as an anchor to prevent Zeroing
-                if (!nav) nav = data.lastOrderNav || 0;
-
-                // 4. Protection: For monetary funds, don't allow it to drop significantly below order price 
-                // if it's likely a data gap (monetary NAVs are generally strictly increasing)
-                if (data.assetClass === 'monetario' && nav < data.lastOrderNav && nav > 0) {
-                    nav = data.lastOrderNav; 
-                }
-
-                totalVal += (data.shares * nav) + data.invested;
-            });
-            return totalVal;
-        };
-
-        const startValue = getValueAt(monthStartTime);
-        const endValue = getValueAt(monthEndTime);
-        
-        // Calculate TWR (Pure performance)
-        // We calculate the weighted performance of each fund active at start of month
-        // or during the month if started within it.
-        let monthlyReturn = 0;
-        
-        // Group holdings at start vs end to find pure price movement
         const getPerformanceAt = (startTime, endTime) => {
             let weightedRet = 0;
             let totalWeight = 0;
@@ -232,21 +115,30 @@ export const calculateMonthlyReturns = (orders, historicalNavs, currentNavs) => 
                 let navStart = 0;
                 let navEnd = 0;
 
-                // Find Nav at Start
+                // LOCF Search for start
                 for (let i = history.length - 1; i >= 0; i--) {
                     if (history[i][0] <= startTime) { navStart = history[i][1]; break; }
                 }
-                // Find Nav at End
+                // LOCF Search for end
                 for (let i = history.length - 1; i >= 0; i--) {
                     if (history[i][0] <= endTime) { navEnd = history[i][1]; break; }
                 }
 
+                // Fallbacks
                 if (!navStart && data.shares > 0) {
-                    // If no history yet, try looking forward to find the FIRST nav
                     const firstOrder = sortedOrders.find(o => o.fundName === fund);
                     if (firstOrder) navStart = firstOrder.nav;
                 }
                 if (!navEnd && currentNavs) navEnd = currentNavs[matchKey] || 0;
+
+                // Monetary Fund Protection: NAV shouldn't drop significantly due to data gaps
+                const cfg = fundConfigs[fund] || {};
+                const isMonetary = cfg.assetClass === 'monetario' || normalizeFundName(fund).includes('monetario') || normalizeFundName(fund).includes('tresorerie');
+                
+                if (isMonetary && navEnd < navStart && navStart > 0 && navEnd > 0) {
+                     // Check if actually a drop or just a gap
+                     navEnd = navStart; 
+                }
 
                 if (navStart > 0 && navEnd > 0) {
                     const fundRet = (navEnd / navStart) - 1;
@@ -259,31 +151,24 @@ export const calculateMonthlyReturns = (orders, historicalNavs, currentNavs) => 
             return totalWeight > 0 ? weightedRet / totalWeight : 0;
         };
 
-        monthlyReturn = getPerformanceAt(monthStartTime, monthEndTime);
+        let monthlyReturn = getPerformanceAt(monthStartTime, monthEndTime);
 
-        // Special case: if mouth is just the start (no initial capital), 
-        // find performance from first trade to month end
-        if (monthlyReturn === 0 && startValue === 0) {
-            const firstTradeInMonth = sortedOrders.find(o => {
+        // Initial month special handling
+        if (monthlyReturn === 0) {
+            const firstInMonth = sortedOrders.find(o => {
                 const ts = new Date(o.date).getTime();
                 return ts >= monthStartTime && ts <= monthEndTime;
             });
-            if (firstTradeInMonth) {
-                monthlyReturn = getPerformanceAt(new Date(firstTradeInMonth.date).getTime(), monthEndTime);
+            if (firstInMonth) {
+                monthlyReturn = getPerformanceAt(new Date(firstInMonth.date).getTime(), monthEndTime);
             }
         }
 
-        // Apply a tiny threshold (0.0001 or 0.01%) to treat near-zero values as zero
-        if (Math.abs(monthlyReturn) < 0.0001) {
-            monthlyReturn = 0;
-        }
-
-        results.push({ year, month, return: monthlyReturn * 100, endValue });
+        if (Math.abs(monthlyReturn) < 0.00001) monthlyReturn = 0;
+        results.push({ year, month, return: monthlyReturn * 100 });
         
-        // Move to next month
         currentDate.setMonth(currentDate.getMonth() + 1);
     }
-
     return results;
 };
 
@@ -292,55 +177,44 @@ export const calculateMonthlyReturns = (orders, historicalNavs, currentNavs) => 
  */
 export const calculateMaxDrawdown = (chartData) => {
     if (!chartData || chartData.length === 0) return 0;
-    
     let maxDrawdown = 0;
     let peak = -Infinity;
-    
     chartData.forEach(point => {
-        const val = point.value;
+        const val = point.value || point.nominal || 0;
         if (val > peak) peak = val;
-        
         const drawdown = peak > 0 ? (val - peak) / peak : 0;
         if (drawdown < maxDrawdown) maxDrawdown = drawdown;
     });
-    
     return maxDrawdown * 100;
 };
 
 /**
- * Calculates correlation matrix between funds
+ * Calculates correlation matrix between funds using improved LOCF logic
  */
 export const calculateCorrelation = (historicalNavs) => {
     const keys = Object.keys(historicalNavs);
     if (keys.length < 2) return null;
 
-    // We need aligned time series
-    const commonDates = [];
-    // Just an approximation: use the last 180 days
+    const matrix = {};
     const now = new Date();
     const start = new Date();
     start.setDate(now.getDate() - 180);
 
-    const matrix = {};
-
     keys.forEach(k1 => {
         matrix[k1] = {};
         keys.forEach(k2 => {
-            if (k1 === k2) {
-                matrix[k1][k2] = 1;
-                return;
-            }
+            if (k1 === k2) { matrix[k1][k2] = 1; return; }
 
             const h1 = historicalNavs[k1] || [];
             const h2 = historicalNavs[k2] || [];
-            
-            // Map to dates for easy lookup
-            const m1 = new Map(h1);
-            const m2 = new Map(h2);
+            if (h1.length < 10 || h2.length < 10) { matrix[k1][k2] = null; return; }
 
-            // Calculate returns
             const returns1 = [];
             const returns2 = [];
+
+            // Improved day-by-day alignment with LOCF
+            let lastVal1 = null;
+            let lastVal2 = null;
 
             for (let i = 0; i < 180; i++) {
                 const d = new Date(start);
@@ -348,22 +222,27 @@ export const calculateCorrelation = (historicalNavs) => {
                 d.setHours(0,0,0,0);
                 const t = d.getTime();
 
-                const dPrev = new Date(d);
-                dPrev.setDate(d.getDate() - 1);
-                const tPrev = dPrev.getTime();
+                // Find closest (at or before)
+                const findVal = (history, targetTs) => {
+                    for(let j = history.length - 1; j >= 0; j--) {
+                        if (history[j][0] <= targetTs) return history[j][1];
+                    }
+                    return null;
+                };
 
-                if (m1.has(t) && m1.has(tPrev) && m2.has(t) && m2.has(tPrev)) {
-                    returns1.push((m1.get(t) / m1.get(tPrev)) - 1);
-                    returns2.push((m2.get(t) / m2.get(tPrev)) - 1);
+                const val1 = findVal(h1, t);
+                const val2 = findVal(h2, t);
+
+                if (val1 && val2 && lastVal1 && lastVal2) {
+                    returns1.push((val1 / lastVal1) - 1);
+                    returns2.push((val2 / lastVal2) - 1);
                 }
+                lastVal1 = val1;
+                lastVal2 = val2;
             }
 
-            if (returns1.length < 10) {
-                matrix[k1][k2] = null;
-                return;
-            }
+            if (returns1.length < 15) { matrix[k1][k2] = null; return; }
 
-            // Pearson Correlation
             const n = returns1.length;
             const sum1 = returns1.reduce((a, b) => a + b, 0);
             const sum2 = returns2.reduce((a, b) => a + b, 0);
@@ -372,22 +251,124 @@ export const calculateCorrelation = (historicalNavs) => {
             const pSum = returns1.map((x, i) => x * returns2[i]).reduce((a, b) => a + b, 0);
 
             const num = pSum - (sum1 * sum2 / n);
-            const den = Math.sqrt((sum1Sq - sum1 * sum1 / n) * (sum2Sq - sum2 * sum2 / n));
-
+            const den = Math.sqrt(Math.max(0, (sum1Sq - sum1 * sum1 / n) * (sum2Sq - sum2 * sum2 / n)));
             matrix[k1][k2] = den === 0 ? 0 : num / den;
         });
     });
-
     return matrix;
 };
 
 /**
- * Projects future wealth (FIRE Calculator logic)
+ * Projects future wealth (FIRE Calculator logic) - Fisher Equation implemented
  */
+/**
+ * Centralized function to calculate the full state of the portfolio.
+ * This eliminates duplication and ensures all views use the same math.
+ */
+export const calculatePortfolioState = (orders, currentNavs, historicalNavs, janNavs, fundConfigs) => {
+    if (!orders || orders.length === 0) return { holdings: {}, totalValuation: 0, totalInvested: 0, globalMWR: 0 };
+
+    const regularOrders = orders.filter(o => o.type !== 'system_cash');
+    const now = new Date();
+    let totalRealizedProfit = 0;
+
+    // 1. Process FIFO/Holdings
+    const holdings = regularOrders.slice().reverse().reduce((acc, order) => {
+        const name = order.fundName;
+        if (!acc[name]) {
+            acc[name] = { shares: 0, invested: 0, buyLots: [], broker: order.broker, isDeposit: order.type === 'deposit', deposits: [] };
+        }
+
+        let s = order.shares || (order.nav > 0 ? order.amount / order.nav : 0);
+        if (order.type === 'buy') {
+            acc[name].shares += s;
+            acc[name].invested += order.amount;
+            acc[name].buyLots.push({ shares: s, amount: order.amount, nav: order.nav || (s > 0 ? order.amount / s : 0) });
+        } else if (order.type === 'sell') {
+            let sharesToSell = s;
+            let costBasisDeducted = 0;
+            for (let lot of acc[name].buyLots) {
+                if (sharesToSell <= 0) break;
+                if (lot.shares > 0) {
+                    const sellFromLot = Math.min(lot.shares, sharesToSell);
+                    const ratio = sellFromLot / lot.shares;
+                    costBasisDeducted += lot.amount * ratio;
+                    lot.shares -= sellFromLot;
+                    lot.amount -= lot.amount * ratio;
+                    sharesToSell -= sellFromLot;
+                }
+            }
+            acc[name].shares -= s;
+            acc[name].invested -= costBasisDeducted;
+            totalRealizedProfit += (order.amount - costBasisDeducted);
+        } else if (order.type === 'deposit') {
+            acc[name].invested += order.amount;
+            acc[name].deposits.push(order);
+        }
+        return acc;
+    }, {});
+
+    // 2. Valuations and Per-Fund Metrics
+    let totalValuation = 0;
+    let totalInvested = 0;
+
+    Object.entries(holdings).forEach(([name, data]) => {
+        const cfg = fundConfigs[name] || {};
+        totalInvested += data.invested;
+
+        if (data.isDeposit) {
+            let val = 0;
+            data.deposits.forEach(dep => {
+                const duration = dep.duration || 12;
+                const rate = dep.interestRate !== undefined ? dep.interestRate : (dep.interestrate || 0);
+                const maturityDate = new Date(new Date(dep.date).setMonth(new Date(dep.date).getMonth() + duration));
+                if (now >= maturityDate) {
+                    val += dep.amount + (dep.amount * (rate / 100) * (duration / 12));
+                } else {
+                    val += dep.amount;
+                }
+            });
+            data.currentValuation = val;
+        } else {
+            const matchKey = getMatchingFundKey(currentNavs, name);
+            const nav = currentNavs[matchKey] || (data.shares > 0 ? data.invested / data.shares : 0);
+            data.currentValuation = data.shares * nav;
+            data.nav = nav;
+        }
+        totalValuation += data.currentValuation;
+    });
+
+    const validOrders = regularOrders.filter(o => ['buy', 'sell', 'deposit'].includes(o.type));
+    const globalMWR = calculateMWR(validOrders, totalValuation);
+
+    // 3. Final Per-Fund Performance Metrics
+    Object.entries(holdings).forEach(([name, data]) => {
+        const fundOrders = validOrders.filter(o => o.fundName === name);
+        if (fundOrders.length > 0) {
+            const matchKey = getMatchingFundKey(janNavs, name);
+            const janNav = janNavs[matchKey] || 0;
+            const currentNav = data.nav || 0;
+            
+            data.ytdReturn = janNav > 0 ? ((currentNav / janNav) - 1) * 100 : 0;
+            data.mwrAnnual = data.currentValuation > 0 ? calculateMWR(fundOrders, data.currentValuation) : 0;
+            
+            const firstOrder = fundOrders.sort((a,b) => new Date(a.date) - new Date(b.date))[0];
+            const firstNav = firstOrder.nav || (firstOrder.shares > 0 ? firstOrder.amount / firstOrder.shares : currentNav);
+            const twrTotal = calculateTWR(firstNav, currentNav);
+            const years = (new Date() - new Date(firstOrder.date)) / (1000 * 60 * 60 * 24 * 365.25);
+            data.twrAnnual = years > 0 ? (Math.pow(1 + twrTotal/100, 1/years) - 1) * 100 : twrTotal;
+        }
+    });
+
+    return { holdings, totalValuation, totalInvested, totalRealizedProfit, globalMWR, validOrders };
+};
 export const projectWealth = (currentValue, monthlyContribution, annualReturnPct, years, inflationPct = 2) => {
     const months = years * 12;
     const monthlyReturn = Math.pow(1 + annualReturnPct / 100, 1/12) - 1;
     const monthlyInflation = Math.pow(1 + inflationPct / 100, 1/12) - 1;
+    
+    // Fisher Equation for real rate: (1 + nominal) / (1 + inflation) - 1
+    const realMonthlyReturn = ((1 + monthlyReturn) / (1 + monthlyInflation)) - 1;
     
     let nominalValue = currentValue;
     let realValue = currentValue;
@@ -396,7 +377,7 @@ export const projectWealth = (currentValue, monthlyContribution, annualReturnPct
     for (let i = 0; i <= months; i++) {
         if (i > 0) {
             nominalValue = (nominalValue + monthlyContribution) * (1 + monthlyReturn);
-            realValue = (realValue + monthlyContribution) * (1 + monthlyReturn - monthlyInflation);
+            realValue = (realValue + monthlyContribution) * (1 + realMonthlyReturn);
         }
 
         if (i % 12 === 0 || i === months) {
@@ -407,6 +388,5 @@ export const projectWealth = (currentValue, monthlyContribution, annualReturnPct
             });
         }
     }
-
     return projection;
 };

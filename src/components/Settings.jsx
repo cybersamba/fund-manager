@@ -130,7 +130,8 @@ export default function Settings({ onClearData, onRestoreData, onExportData, onI
                                                     value={config.ter || ''}
                                                     onChange={(e) => {
                                                         const newConfigs = { ...fundConfigs };
-                                                        newConfigs[name] = { ...newConfigs[name], ter: parseFloat(e.target.value) || 0 };
+                                                        const val = e.target.value.toString().replace(',', '.');
+                                                        newConfigs[name] = { ...newConfigs[name], ter: parseFloat(val) || 0 };
                                                         setFundConfigs(newConfigs);
                                                     }}
                                                 />

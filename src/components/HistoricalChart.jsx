@@ -4,6 +4,7 @@ import { getMatchingFundKey } from '../utils/helpers';
 
 export default function HistoricalChart({ orders, historicalNavs, isPrivacyMode, currency, formatCurrency, seamless = false }) {
     const [period, setPeriod] = useState('ALL');
+    const [benchmark, setBenchmark] = useState('7%');
 
     const periods = [
         { id: '1W', label: '1S', days: 7 },
@@ -14,22 +15,27 @@ export default function HistoricalChart({ orders, historicalNavs, isPrivacyMode,
         { id: 'ALL', label: 'MAX', days: null }
     ];
 
+    const benchmarkOptions = [
+        { id: '7%', label: 'Hurdle 7% CAGR' },
+        { id: 'S&P 500 (Vanguard)', label: 'S&P 500 Index' },
+        { id: 'MSCI World (iShares)', label: 'MSCI World Index' }
+    ];
+
     const chartData = useMemo(() => {
         if (!orders || orders.length === 0 || !historicalNavs || Object.keys(historicalNavs).length === 0) return [];
 
-        // Ensure we have some historical navs data
         const hasNavData = Object.values(historicalNavs).some(navArray => navArray && navArray.length > 0);
         if (!hasNavData) return [];
 
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
+        const sortedOrders = [...orders].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        const absoluteFirstDate = new Date(sortedOrders[0].date);
+        absoluteFirstDate.setHours(0, 0, 0, 0);
+
         let startDate;
         const selectedPeriod = periods.find(p => p.id === period);
-        
-        const absoluteFirstDate = new Date(Math.min(...orders.map(o => new Date(o.date).getTime())));
-        absoluteFirstDate.setHours(0, 0, 0, 0);
-        
         if (selectedPeriod && selectedPeriod.days) {
             startDate = new Date(today);
             startDate.setDate(today.getDate() - selectedPeriod.days);
@@ -38,11 +44,9 @@ export default function HistoricalChart({ orders, historicalNavs, isPrivacyMode,
         }
         startDate.setHours(0, 0, 0, 0);
 
-        // Pre-calculate full history to get holdings at any point
-        const fundNames = Object.keys(historicalNavs);
+        // Prepare NAV map for O(1) daily lookup
         const navMap = {};
-
-        fundNames.forEach(fund => {
+        Object.keys(historicalNavs).forEach(fund => {
             navMap[fund] = {};
             if (historicalNavs[fund]) {
                 historicalNavs[fund].forEach(([ts, nav]) => {
@@ -58,6 +62,7 @@ export default function HistoricalChart({ orders, historicalNavs, isPrivacyMode,
             if (!navMap[matchKey]) return 0;
             if (navMap[matchKey][targetTime]) return navMap[matchKey][targetTime];
 
+            // Quick LOCF
             for (let i = 1; i <= 14; i++) {
                 const pastTime = targetTime - (i * 24 * 60 * 60 * 1000);
                 if (navMap[matchKey][pastTime]) return navMap[matchKey][pastTime];
@@ -66,144 +71,82 @@ export default function HistoricalChart({ orders, historicalNavs, isPrivacyMode,
         };
 
         const dataPoints = [];
-        // Start simulation from the first order to maintain true historical compounding
         let currentDate = new Date(absoluteFirstDate);
-
-        const sortedOrders = [...orders].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
         
+        // CUMULATIVE STATE
+        const currentHoldings = {}; 
         let benchmarkValue = 0;
-        let lastTotalInvested = 0;
+        let orderIndex = 0;
 
         while (currentDate <= today) {
             const time = currentDate.getTime();
 
-            let totalInvested = 0;
-            let totalValue = 0;
+            // 1. Update holdings with orders from TODAY
+            while (orderIndex < sortedOrders.length && new Date(sortedOrders[orderIndex].date).setHours(0,0,0,0) <= time) {
+                const order = sortedOrders[orderIndex];
+                const name = order.fundName;
+                if (!currentHoldings[name]) currentHoldings[name] = { shares: 0, invested: 0, deposits: [] };
 
-            const relevantOrders = sortedOrders.filter(o => new Date(o.date).getTime() <= time);
-
-            const holdings = relevantOrders.reduce((acc, order) => {
-                if (!acc[order.fundName]) acc[order.fundName] = { shares: 0, invested: 0, buyLots: [] };
-
-                let calculatedShares = order.shares;
-                if (!calculatedShares && order.nav > 0 && order.type !== 'deposit') {
-                    calculatedShares = order.amount / order.nav;
-                } else if (!calculatedShares && order.type !== 'deposit') {
-                    const historicalNav = getNavForDate(order.fundName, new Date(order.date).setHours(0, 0, 0, 0));
-                    if (historicalNav > 0) calculatedShares = order.amount / historicalNav;
-                }
-                calculatedShares = calculatedShares || 0;
-
+                let s = order.shares || (order.nav > 0 ? order.amount / order.nav : 0);
                 if (order.type === 'buy') {
-                    acc[order.fundName].shares += calculatedShares;
-                    acc[order.fundName].invested += order.amount;
-                    acc[order.fundName].buyLots.push({
-                        shares: calculatedShares,
-                        amount: order.amount,
-                        nav: order.nav || (calculatedShares > 0 ? order.amount / calculatedShares : 0)
-                    });
+                    currentHoldings[name].shares += s;
+                    currentHoldings[name].invested += order.amount;
+                    benchmarkValue += order.amount;
                 } else if (order.type === 'sell') {
-                    let sharesToSell = calculatedShares;
-                    let capitalToDeduct = 0;
-
-                    for (let i = 0; i < acc[order.fundName].buyLots.length; i++) {
-                        if (sharesToSell <= 0) break;
-
-                        const lot = acc[order.fundName].buyLots[i];
-                        if (lot.shares > 0) {
-                            if (lot.shares <= sharesToSell) {
-                                capitalToDeduct += lot.amount;
-                                sharesToSell -= lot.shares;
-                                lot.shares = 0;
-                                lot.amount = 0;
-                            } else {
-                                const fractionSold = sharesToSell / lot.shares;
-                                const proportionalCapital = lot.amount * fractionSold;
-                                capitalToDeduct += proportionalCapital;
-
-                                lot.shares -= sharesToSell;
-                                lot.amount -= proportionalCapital;
-                                sharesToSell = 0;
-                            }
-                        }
-                    }
-
-                    acc[order.fundName].shares -= calculatedShares;
-                    acc[order.fundName].invested -= capitalToDeduct;
+                    // Approximate cost basis deduction for chart performance
+                    const factor = currentHoldings[name].shares > 0 ? (s / currentHoldings[name].shares) : 0;
+                    currentHoldings[name].invested -= currentHoldings[name].invested * factor;
+                    currentHoldings[name].shares -= s;
+                    
+                    // Benchmark sell logic
+                    const totalValBefore = Object.entries(currentHoldings).reduce((sum, [f, d]) => sum + (d.shares * getNavForDate(f, time)), 0);
+                    if (totalValBefore > 0) benchmarkValue = benchmarkValue * (1 - (order.amount / totalValBefore));
+                    else benchmarkValue -= order.amount;
                 } else if (order.type === 'deposit') {
-                    acc[order.fundName].invested += order.amount;
-                    acc[order.fundName].isDeposit = true;
-                    if (!acc[order.fundName].deposits) acc[order.fundName].deposits = [];
-                    acc[order.fundName].deposits.push(order);
+                    currentHoldings[name].invested += order.amount;
+                    currentHoldings[name].deposits.push(order);
+                    benchmarkValue += order.amount;
                 }
-                return acc;
-            }, {});
-
-            Object.entries(holdings).forEach(([fund, data]) => {
-                totalInvested += data.invested;
-
-                if (data.isDeposit) {
-                    data.deposits.forEach(dep => {
-                        const startDateDep = new Date(dep.date);
-                        const maturityDate = new Date(startDateDep);
-                        maturityDate.setMonth(maturityDate.getMonth() + (dep.duration || 12));
-                        maturityDate.setHours(23, 59, 59, 999);
-
-                        if (time >= maturityDate.getTime()) {
-                            const profit = dep.amount * ((dep.interestRate || 0) / 100) * ((dep.duration || 12) / 12);
-                            totalValue += (dep.amount + profit);
-                        } else {
-                            totalValue += dep.amount;
-                        }
-                    });
-                    return;
-                }
-
-                const dayNav = getNavForDate(fund, time);
-                if (dayNav > 0 && data.shares > 0) {
-                    totalValue += data.shares * dayNav;
-                } else if (data.shares > 0) {
-                    const estimatedNav = data.invested / data.shares;
-                    totalValue += data.shares * estimatedNav;
-                } else if (data.invested !== 0) {
-                    totalValue += data.invested;
-                }
-            });
-
-            // TWR Percentage-based Benchmark (Shadow Portfolio):
-            if (time > absoluteFirstDate.getTime()) {
-                benchmarkValue = benchmarkValue * Math.pow(1.07, 1/365); // 7% CAGR
+                orderIndex++;
             }
 
-            const dailyOrders = orders.filter(o => {
-                const d = new Date(o.date);
-                d.setHours(0,0,0,0);
-                return d.getTime() === time;
-            });
+            // 2. Accumulate Daily Values
+            let dailyTotalValue = 0;
+            let dailyTotalInvested = 0;
 
-            let dailyBuys = 0;
-            let dailySells = 0;
-            dailyOrders.forEach(o => {
-                if (o.type === 'buy' || o.type === 'deposit') dailyBuys += o.amount;
-                else if (o.type === 'sell') dailySells += o.amount;
-            });
-
-            if (dailyBuys > 0) benchmarkValue += dailyBuys;
-            if (dailySells > 0) {
-                const valueBefore = totalValue + dailySells;
-                if (valueBefore > 0) {
-                    benchmarkValue = benchmarkValue * (1 - (dailySells / valueBefore));
+            Object.entries(currentHoldings).forEach(([fund, data]) => {
+                dailyTotalInvested += data.invested;
+                if (data.deposits.length > 0) {
+                    data.deposits.forEach(dep => {
+                        const maturity = new Date(new Date(dep.date).setMonth(new Date(dep.date).getMonth() + (dep.duration || 12)));
+                        if (time >= maturity.getTime()) {
+                            dailyTotalValue += dep.amount + (dep.amount * ((dep.interestRate || 0)/100) * ((dep.duration || 12)/12));
+                        } else {
+                            dailyTotalValue += dep.amount;
+                        }
+                    });
                 } else {
-                    benchmarkValue -= dailySells;
+                    const nav = getNavForDate(fund, time);
+                    dailyTotalValue += data.shares * (nav || (data.invested / data.shares) || 0);
+                }
+            });
+
+            // 3. Update Benchmark
+            if (time > absoluteFirstDate.getTime()) {
+                if (benchmark === '7%') {
+                    benchmarkValue = benchmarkValue * Math.pow(1.07, 1/365.25);
+                } else {
+                    const navToday = getNavForDate(benchmark, time);
+                    const navYesterday = getNavForDate(benchmark, time - 86400000);
+                    if (navToday > 0 && navYesterday > 0) benchmarkValue *= (navToday / navYesterday);
                 }
             }
 
             if (time >= startDate.getTime()) {
                 dataPoints.push({
-                    date: new Date(currentDate).toLocaleDateString(undefined, { day: period === '1W' ? '2-digit' : undefined, month: 'short', year: '2-digit' }),
-                    timestamp: time,
-                    invested: totalInvested,
-                    value: totalValue,
+                    date: currentDate.toLocaleDateString(undefined, { day: '2-digit', month: 'short' }),
+                    invested: dailyTotalInvested,
+                    value: dailyTotalValue,
                     benchmark: benchmarkValue
                 });
             }
@@ -211,14 +154,9 @@ export default function HistoricalChart({ orders, historicalNavs, isPrivacyMode,
             currentDate.setDate(currentDate.getDate() + 1);
         }
 
-        let finalDataPoints = dataPoints;
-        if (dataPoints.length > 500) {
-            const step = Math.ceil(dataPoints.length / 200);
-            finalDataPoints = dataPoints.filter((_, i) => i % step === 0 || i === dataPoints.length - 1);
-        }
-
-        return finalDataPoints;
-    }, [orders, historicalNavs, period]);
+        // Downsample for performance if needed
+        return dataPoints.length > 400 ? dataPoints.filter((_, i) => i % Math.ceil(dataPoints.length / 400) === 0) : dataPoints;
+    }, [orders, historicalNavs, period, benchmark]);
 
     if (!historicalNavs || Object.keys(historicalNavs).length === 0 || chartData.length === 0) {
         return null;
@@ -235,20 +173,22 @@ export default function HistoricalChart({ orders, historicalNavs, isPrivacyMode,
                     <h2 className="text-xs font-bold text-slate-800 uppercase tracking-widest font-mono">Curva de Rendimiento</h2>
                 </div>
                 
-                <div className="flex p-0.5 rounded-lg border bg-slate-50 border-slate-200/60 shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)]">
-                    {periods.map((p) => (
-                        <button
-                            key={p.id}
-                            onClick={() => setPeriod(p.id)}
-                            className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all ${
-                                period === p.id 
-                                ? 'bg-white text-slate-900 shadow-sm border border-slate-200/50'
-                                : 'text-slate-500 hover:text-slate-900'
-                            }`}
-                        >
-                            {p.label}
-                        </button>
-                    ))}
+                <div className="flex gap-2">
+                    <select 
+                        className="bg-slate-50 border border-slate-200/60 text-slate-800 font-mono rounded-lg px-2 py-1 text-[10px] outline-none hover:border-slate-300 transition-colors"
+                        value={benchmark}
+                        onChange={(e) => setBenchmark(e.target.value)}
+                        title="Comparar con..."
+                    >
+                        {benchmarkOptions.map(b => <option key={b.id} value={b.id}>{b.label}</option>)}
+                    </select>
+                    <select 
+                        className="bg-slate-50 border border-slate-200/60 text-slate-900 font-mono rounded-lg px-2 py-1 text-[10px] outline-none"
+                        value={period}
+                        onChange={(e) => setPeriod(e.target.value)}
+                    >
+                        {periods.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                    </select>
                 </div>
             </div>
 
@@ -314,7 +254,7 @@ export default function HistoricalChart({ orders, historicalNavs, isPrivacyMode,
                         <Line
                             type="monotone"
                             dataKey="benchmark"
-                            name="Benchmark (7% CAGR)"
+                            name={`Benchmark (${benchmark})`}
                             stroke="#f59e0b"
                             strokeWidth={1.5}
                             strokeDasharray="4 4"

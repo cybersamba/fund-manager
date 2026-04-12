@@ -526,137 +526,16 @@ function App() {
         }
     };
 
-    // Calculate aggregated metrics with Shares and NAV using FIFO (First-In-First-Out)
-    let totalRealizedProfit = 0;
-    const currentHoldings = regularOrders.slice().reverse().reduce((acc, order) => {
-        if (!acc[order.fundName]) {
-            acc[order.fundName] = { shares: 0, invested: 0, buyLots: [], broker: order.broker };
-        }
-
-        let calculatedShares = order.shares;
-        if (!calculatedShares && order.nav > 0 && order.type !== 'deposit') {
-            calculatedShares = order.amount / order.nav;
-        } else if (!calculatedShares && historicalNavs && order.type !== 'deposit') {
-            const matchKey = getMatchingFundKey(historicalNavs, order.fundName);
-            const history = historicalNavs[matchKey];
-            if (history) {
-                const orderTime = new Date(order.date).setHours(0, 0, 0, 0);
-                let foundNav = history[orderTime] || 0;
-                if (!foundNav) {
-                    for (let i = 1; i <= 14; i++) {
-                        const pastTime = orderTime - (i * 24 * 60 * 60 * 1000);
-                        if (history[pastTime]) {
-                            foundNav = history[pastTime];
-                            break;
-                        }
-                    }
-                }
-                if (foundNav > 0) calculatedShares = order.amount / foundNav;
-            }
-        }
-        calculatedShares = calculatedShares || 0;
-
-        if (order.type === 'buy') {
-            acc[order.fundName].shares += calculatedShares;
-            acc[order.fundName].invested += order.amount;
-            acc[order.fundName].buyLots.push({
-                shares: calculatedShares,
-                amount: order.amount,
-                nav: order.nav || (calculatedShares > 0 ? order.amount / calculatedShares : 0)
-            });
-        } else if (order.type === 'sell') {
-            let sharesToSell = calculatedShares;
-            let capitalToDeduct = 0;
-
-            // Iterate over buy lots chronologically (they are in order since we reversed the array to oldest->newest)
-            for (let i = 0; i < acc[order.fundName].buyLots.length; i++) {
-                if (sharesToSell <= 0) break;
-
-                const lot = acc[order.fundName].buyLots[i];
-                if (lot.shares > 0) {
-                    if (lot.shares <= sharesToSell) {
-                        // Exhaust this lot completely
-                        capitalToDeduct += lot.amount;
-                        sharesToSell -= lot.shares;
-                        lot.shares = 0;
-                        lot.amount = 0;
-                    } else {
-                        // Fulfill the rest of the sale from this lot
-                        const fractionSold = sharesToSell / lot.shares;
-                        const proportionalCapital = lot.amount * fractionSold;
-                        capitalToDeduct += proportionalCapital;
-
-                        lot.shares -= sharesToSell;
-                        lot.amount -= proportionalCapital;
-                        sharesToSell = 0;
-                    }
-                }
-            }
-
-            acc[order.fundName].shares -= calculatedShares;
-            acc[order.fundName].invested -= capitalToDeduct; // Deduct proportional cost basis, not sale amount
-            totalRealizedProfit += (order.amount - capitalToDeduct);
-
-        } else if (order.type === 'deposit') {
-            acc[order.fundName].invested += order.amount;
-            acc[order.fundName].isDeposit = true;
-            if (!acc[order.fundName].deposits) acc[order.fundName].deposits = [];
-            acc[order.fundName].deposits.push(order);
-        }
-        return acc;
-    }, {});
-
-    const totalCapitalAportado = Object.values(currentHoldings).reduce((sum, fund) => sum + fund.invested, 0);
-
-    const totalCarteraValorada = Object.entries(currentHoldings).reduce((sum, [fundName, data]) => {
-        if (data.isDeposit) {
-            let depositVal = 0;
-            data.deposits.forEach(dep => {
-                const startDate = new Date(dep.date);
-                const maturityDate = new Date(startDate);
-                // Handle both property names just in case
-                const duration = dep.duration || dep.duration_months || 12;
-                const rate = dep.interestRate !== undefined ? dep.interestRate : (dep.interestrate !== undefined ? dep.interestrate : 0);
-                
-                maturityDate.setMonth(maturityDate.getMonth() + duration);
-                maturityDate.setHours(23, 59, 59, 999);
-
-                if (new Date() >= maturityDate) {
-                    const profit = dep.amount * (rate / 100) * (duration / 12);
-                    depositVal += (dep.amount + profit);
-                } else {
-                    // For non-matured, we show current principal
-                    depositVal += dep.amount;
-                }
-            });
-            return sum + depositVal;
-        }
-
-        const matchKey = getMatchingFundKey(currentNavs, fundName);
-        const fallbackNav = data.shares > 0 ? (data.invested / data.shares) : 0;
-        const nav = currentNavs[matchKey] || fallbackNav;
-
-        let valorado = data.shares * nav;
-        if (data.shares === 0 && data.invested !== 0) {
-            valorado = data.invested;
-        }
-
-        return sum + valorado;
-    }, 0);
-
-    useEffect(() => {
-        setSystemStatus({ status: driveFileId ? 'online' : 'connecting', processedItems: orders.length });
-    }, [orders.length, driveFileId]);
-
-    // Filter valid orders used for both global and individual IRR calculations
-    const validOrders = useMemo(() => regularOrders.filter(o => o.type === 'buy' || o.type === 'sell' || o.type === 'deposit'), [regularOrders]);
-
-    // --- Global Annualized Return (MWR/IRR) Calculation ---
-    // We treat all buy/sell/deposit orders as cash flows to calculate the portfolio's absolute IRR
-    const globalMWR = useMemo(() => {
-        if (validOrders.length === 0 || totalCarteraValorada <= 0) return 0;
-        return calculateMWR(validOrders, totalCarteraValorada);
-    }, [validOrders, totalCarteraValorada]);
+    const { 
+        holdings: currentHoldings, 
+        totalValuation: totalCarteraValorada, 
+        totalInvested: totalCapitalAportado, 
+        totalRealizedProfit, 
+        globalMWR, 
+        validOrders 
+    } = useMemo(() => {
+        return calculatePortfolioState(orders, currentNavs, historicalNavs, janNavs, fundConfigs);
+    }, [orders, currentNavs, historicalNavs, janNavs, fundConfigs]);
 
     const plusvaliaLatente = totalCarteraValorada - totalCapitalAportado;
     const plusvalia = plusvaliaLatente + totalRealizedProfit;
@@ -664,48 +543,30 @@ function App() {
 
     const { inflationTargetValue } = useMemo(() => calculateInflationTarget(validOrders), [validOrders]);
     const inflationHurdleCost = inflationTargetValue > 0 && totalCapitalAportado > 0 ? (inflationTargetValue - totalCapitalAportado) : 0;
-    const isBeatingInflation = (plusvaliaLatente + availableCashValue) >= (inflationHurdleCost + availableCashValue);
-
-    // --- Advanced Intelligence: Monthly Matrix & Drawdown ---
+    
+    // Advanced Intelligence: Monthly Matrix
     const monthlyData = useMemo(() => {
-        return calculateMonthlyReturns(validOrders, historicalNavs, currentNavs);
-    }, [validOrders, historicalNavs, currentNavs]);
+        return calculateMonthlyReturns(validOrders, historicalNavs, currentNavs, fundConfigs);
+    }, [validOrders, historicalNavs, currentNavs, fundConfigs]);
 
-    // Calculate Max Drawdown from historical metrics
-    // Since we don't have the full day-by-day chartData here yet (it's inside HistoricalChart),
-    // we can approximate it or use the monthly endValues for a rougher but useful metric.
     const maxDrawdown = useMemo(() => {
         if (!monthlyData || monthlyData.length === 0) return 0;
-        return calculateMaxDrawdown(monthlyData.map(d => ({ value: d.endValue })));
+        return calculateMaxDrawdown(monthlyData.map(d => ({ value: d.endValue || 0 })));
     }, [monthlyData]);
 
-    // Estimated Tax (Spain: 19% up to 6k, 21% up to 50k, 23% up to 200k, 26% > 200k)
     const estimateTax = (profit) => {
         if (profit <= 0) return 0;
-        let tax = 0;
         if (profit <= 6000) return profit * 0.19;
-        
-        tax += 6000 * 0.19;
-        if (profit <= 50000) return tax + (profit - 6000) * 0.21;
-        
-        tax += (50000 - 6000) * 0.21;
-        if (profit <= 200000) return tax + (profit - 50000) * 0.23;
-        
-        tax += (200000 - 50000) * 0.23;
-        return tax + (profit - 200000) * 0.26;
+        if (profit <= 50000) return (6000 * 0.19) + (profit - 6000) * 0.21;
+        if (profit <= 200000) return (6000 * 0.19) + (44000 * 0.21) + (profit - 50000) * 0.23;
+        return (6000 * 0.19) + (44000 * 0.21) + (150000 * 0.23) + (profit - 200000) * 0.26;
     };
 
     const fiscalImpact = estimateTax(plusvaliaLatente);
 
-    // Calculate Fund-only metrics for the dashboard Rentabilidad card
     const fundHoldingsEntries = Object.entries(currentHoldings).filter(([_, data]) => !data.isDeposit);
+    const fundCarteraValorada = fundHoldingsEntries.reduce((sum, [_, data]) => sum + data.currentValuation, 0);
     const fundCapitalAportado = fundHoldingsEntries.reduce((sum, [_, data]) => sum + data.invested, 0);
-    const fundCarteraValorada = fundHoldingsEntries.reduce((sum, [fundName, data]) => {
-        const matchKey = getMatchingFundKey(currentNavs, fundName);
-        const fallbackNav = data.shares > 0 ? (data.invested / data.shares) : 0;
-        const nav = currentNavs[matchKey] || fallbackNav;
-        return sum + (data.shares * nav);
-    }, 0);
     const fundPlusvalia = (fundCarteraValorada - fundCapitalAportado) + totalRealizedProfit;
     const fundRentabilidad = fundCapitalAportado > 0 ? (fundPlusvalia / fundCapitalAportado) * 100 : 0;
 
