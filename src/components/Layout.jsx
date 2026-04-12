@@ -17,6 +17,7 @@ export default function Layout({ currentView, onNavigate, user, onLogout, childr
         { id: 'portfolio', label: 'Cartera', icon: <Target size={18} /> },
         { id: 'analisis', label: 'Análisis', icon: <BrainCircuit size={18} /> },
         { id: 'orders', label: 'Libro', icon: <History size={18} /> },
+        { id: 'guide', label: 'Guía', icon: <BookOpen size={18} /> },
         { id: 'settings', label: 'Ajustes', icon: <Settings size={18} /> }
     ];
 
