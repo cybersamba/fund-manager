@@ -502,7 +502,14 @@ function App() {
         return () => clearTimeout(timer);
     }, [orders]);
 
-    const regularOrders = orders.filter(o => o.type !== 'system_cash');
+    const regularOrders = useMemo(() => {
+        return orders.filter(o => 
+            o.type !== 'system_cash' && 
+            o.date && !isNaN(new Date(o.date).getTime()) &&
+            !isNaN(parseFloat(o.amount))
+        );
+    }, [orders]);
+
     const cashOrder = orders.find(o => o.type === 'system_cash');
     const availableCashValue = cashOrder ? cashOrder.amount : 0;
 

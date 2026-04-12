@@ -83,11 +83,11 @@ export default function Portfolio({ orders, currentNavs, historicalNavs, janNavs
     }, 0);
 
     const healthData = [
-        { subject: 'Eficiencia', A: Math.max(0, 100 - (averageTer * 120)), fullMark: 100 },
-        { subject: 'Rendimiento', A: Math.max(0, Math.min(100, 15 + (globalTwrRough * 3.4))), fullMark: 100 },
-        { subject: 'Diversidad', A: Math.min(100, activeHoldings.length * 15 + 25), fullMark: 100 },
-        { subject: 'Seguridad', A: Math.min(100, (weightedSafety > 98 ? 100 : weightedSafety * 0.8 + 20)), fullMark: 100 },
-        { subject: 'Disciplina', A: Math.max(0, 100 - (deviationScore * 1.5)), fullMark: 100 }
+        { subject: 'Eficiencia', A: Math.max(0, 100 - ((averageTer || 0) * 120)) || 0, fullMark: 100 },
+        { subject: 'Rendimiento', A: Math.max(0, Math.min(100, 15 + ((globalTwrRough || 0) * 3.4))) || 0, fullMark: 100 },
+        { subject: 'Diversidad', A: Math.min(100, (activeHoldings.length * 15 + 25)) || 0, fullMark: 100 },
+        { subject: 'Seguridad', A: Math.min(100, ((weightedSafety || 0) > 98 ? 100 : (weightedSafety || 0) * 0.8 + 20)) || 0, fullMark: 100 },
+        { subject: 'Disciplina', A: Math.max(0, 100 - ((deviationScore || 0) * 1.5)) || 0, fullMark: 100 }
     ];
 
     const ASSET_PALETTES = {

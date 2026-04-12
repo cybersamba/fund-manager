@@ -313,7 +313,12 @@ export const calculateCorrelation = (historicalNavs) => {
 export const calculatePortfolioState = (orders, currentNavs, historicalNavs, janNavs, fundConfigs) => {
     if (!orders || orders.length === 0) return { holdings: {}, totalValuation: 0, totalInvested: 0, globalMWR: 0 };
 
-    const regularOrders = orders.filter(o => o.type !== 'system_cash');
+    const validOrders = orders.filter(o => 
+        o.type !== 'system_cash' && 
+        o.date && !isNaN(new Date(o.date).getTime()) &&
+        !isNaN(parseFloat(o.amount))
+    );
+    const regularOrders = validOrders;
     const now = new Date();
     let totalRealizedProfit = 0;
 
@@ -383,29 +388,48 @@ export const calculatePortfolioState = (orders, currentNavs, historicalNavs, jan
         totalValuation += data.currentValuation;
     });
 
-    const validOrders = regularOrders.filter(o => ['buy', 'sell', 'deposit'].includes(o.type));
-    const globalMWR = calculateMWR(validOrders, totalValuation);
+    const validOrdersForMwr = regularOrders.filter(o => ['buy', 'sell', 'deposit'].includes(o.type));
+    const rawMwr = calculateMWR(validOrdersForMwr, totalValuation);
+    const globalMWR = isNaN(rawMwr) ? 0 : rawMwr;
 
     // 3. Final Per-Fund Performance Metrics
     Object.entries(holdings).forEach(([name, data]) => {
-        const fundOrders = validOrders.filter(o => o.fundName === name);
+        const fundOrders = validOrdersForMwr.filter(o => o.fundName === name);
         if (fundOrders.length > 0) {
             const matchKey = getMatchingFundKey(janNavs, name);
             const janNav = janNavs[matchKey] || 0;
             const currentNav = data.nav || 0;
             
-            data.ytdReturn = janNav > 0 ? ((currentNav / janNav) - 1) * 100 : 0;
-            data.mwrAnnual = data.currentValuation > 0 ? calculateMWR(fundOrders, data.currentValuation) : 0;
+            const rawYtd = janNav > 0 ? ((currentNav / janNav) - 1) * 100 : 0;
+            data.ytdReturn = isNaN(rawYtd) ? 0 : rawYtd;
+            
+            const rawFundMwr = data.currentValuation > 0 ? calculateMWR(fundOrders, data.currentValuation) : 0;
+            data.mwrAnnual = isNaN(rawFundMwr) ? 0 : rawFundMwr;
             
             const firstOrder = fundOrders.sort((a,b) => new Date(a.date) - new Date(b.date))[0];
             const firstNav = firstOrder.nav || (firstOrder.shares > 0 ? firstOrder.amount / firstOrder.shares : currentNav);
             const twrTotal = calculateTWR(firstNav, currentNav);
             const years = (new Date() - new Date(firstOrder.date)) / (1000 * 60 * 60 * 24 * 365.25);
-            data.twrAnnual = years > 0 ? (Math.pow(1 + twrTotal/100, 1/years) - 1) * 100 : twrTotal;
+            const rawTwrAnnual = years > 0 ? (Math.pow(Math.max(0.0001, 1 + twrTotal/100), 1/years) - 1) * 100 : twrTotal;
+            data.twrAnnual = isNaN(rawTwrAnnual) ? 0 : rawTwrAnnual;
+        } else {
+            data.ytdReturn = 0;
+            data.mwrAnnual = 0;
+            data.twrAnnual = 0;
         }
+        
+        // Ensure valuation is numeric
+        if (isNaN(data.currentValuation)) data.currentValuation = 0;
     });
 
-    return { holdings, totalValuation, totalInvested, totalRealizedProfit, globalMWR, validOrders };
+    return { 
+        holdings, 
+        totalValuation: isNaN(totalValuation) ? 0 : totalValuation, 
+        totalInvested: isNaN(totalInvested) ? 0 : totalInvested, 
+        totalRealizedProfit: isNaN(totalRealizedProfit) ? 0 : totalRealizedProfit, 
+        globalMWR, 
+        validOrders: validOrdersForMwr 
+    };
 };
 export const projectWealth = (currentValue, monthlyContribution, annualReturnPct, years, inflationPct = 2) => {
     const months = years * 12;
