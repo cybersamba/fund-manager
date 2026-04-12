@@ -11,7 +11,7 @@ import Watchlist from './components/Watchlist';
 import Simulation from './components/Simulation';
 import Guide from './components/Guide';
 import HistoricalChart from './components/HistoricalChart';
-import { getMatchingFundKey, calculateMWR, calculateTrailingReturn, calculateMonthlyReturns, calculateMaxDrawdown, calculateCorrelation } from './utils/helpers';
+import { getMatchingFundKey, calculateMWR, calculateTrailingReturn, calculateMonthlyReturns, calculateMaxDrawdown, calculateCorrelation, calculatePortfolioState } from './utils/helpers';
 import MonthlyHeatmap from './components/MonthlyHeatmap';
 import FIRESimulator from './components/FIRESimulator';
 import CorrelationMatrix from './components/CorrelationMatrix';
