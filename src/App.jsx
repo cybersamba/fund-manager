@@ -1,8 +1,6 @@
-console.log("%c [FundManager] Loaded v1.3.0 - Global Annualized Engine Active ", "background: #2563eb; color: #fff; font-weight: bold;");
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { useGoogleLogin, googleLogout } from '@react-oauth/google';
-import { getOrInitFileId, fetchOrdersFromDrive, saveOrdersToDrive } from './googleDriveApi';
+import { getOrInitFileId, fetchDataFromDrive, saveDataToDrive } from './googleDriveApi';
 import { Eye, EyeOff, Lock } from 'lucide-react';
 import Layout from './components/Layout';
 import OrderForm from './components/OrderForm';
@@ -13,10 +11,13 @@ import Watchlist from './components/Watchlist';
 import Simulation from './components/Simulation';
 import Guide from './components/Guide';
 import HistoricalChart from './components/HistoricalChart';
-import { getMatchingFundKey, calculateMWR, calculateTrailingReturn } from './utils/helpers';
+import { getMatchingFundKey, calculateMWR, calculateTrailingReturn, calculateMonthlyReturns, calculateMaxDrawdown, calculateCorrelation } from './utils/helpers';
+import MonthlyHeatmap from './components/MonthlyHeatmap';
+import FIRESimulator from './components/FIRESimulator';
+import CorrelationMatrix from './components/CorrelationMatrix';
+import SmartAssistant from './components/SmartAssistant';
 import { calculateInflationTarget } from './utils/inflationApi';
-
-import { RefreshCw, LayoutDashboard, Target, History, Settings as SettingsIcon, LogOut, BarChart2, Monitor } from 'lucide-react';
+import { RefreshCw, LayoutDashboard, Target, History, Settings as SettingsIcon, LogOut, BarChart2, Monitor, Sparkles, Brain, TrendingUp } from 'lucide-react';
 import { fetchNavHistory } from './utils/navApi';
 
 function App() {
@@ -134,17 +135,25 @@ function App() {
     const [isEditingCash, setIsEditingCash] = useState(false);
     const [cashInput, setCashInput] = useState('');
 
+    const [dataLoaded, setDataLoaded] = useState(false);
+
     useEffect(() => {
         if (!session || !driveFileId) return;
-        const fetchOrders = async () => {
+        const fetchAllData = async () => {
             setIsLoadingOrders(true);
             try {
-                const data = await fetchOrdersFromDrive(session, driveFileId);
-                if (data) {
-                    setOrders(data.map(mapFromDb));
+                const { orders: driveOrders, fundConfigs: driveConfigs } = await fetchDataFromDrive(session, driveFileId);
+                
+                if (driveOrders) {
+                    setOrders(driveOrders.map(mapFromDb));
                 }
+                
+                if (driveConfigs && Object.keys(driveConfigs).length > 0) {
+                    setFundConfigs(prev => ({ ...prev, ...driveConfigs }));
+                }
+                setDataLoaded(true);
             } catch (err) {
-                console.error("Failed to fetch orders from Drive backend", err);
+                console.error("Failed to fetch data from Drive backend", err);
                 const savedOrders = localStorage.getItem('fund-orders');
                 if (savedOrders) {
                     setOrders(JSON.parse(savedOrders));
@@ -153,7 +162,7 @@ function App() {
                 setIsLoadingOrders(false);
             }
         };
-        fetchOrders();
+        fetchAllData();
     }, [session, driveFileId]);
 
     const [currentNavs, setCurrentNavs] = useState(() => {
@@ -186,6 +195,11 @@ function App() {
         };
     });
 
+    const STANDARD_BENCHMARKS = {
+        'S&P 500 (Vanguard)': 'F00000OWOK',
+        'MSCI World (iShares)': 'F00000J6S1'
+    };
+
     const [isFetchingNavs, setIsFetchingNavs] = useState(false);
     const [navFetchError, setNavFetchError] = useState(null);
     const [lastUpdated, setLastUpdated] = useState(null);
@@ -204,42 +218,43 @@ function App() {
 
     useEffect(() => {
         localStorage.setItem('fund-configs-v1', JSON.stringify(fundConfigs));
-    }, [fundConfigs]);
+        // Sync to drive if changed
+        if (session && driveFileId && dataLoaded) {
+            saveDataToDrive(session, driveFileId, orders.map(mapToDb), fundConfigs).catch(console.error);
+        }
+    }, [fundConfigs, dataLoaded]);
 
-    // Automatically detect new funds from orders and add them to configs
     useEffect(() => {
         if (orders.length === 0) return;
-        const uniqueFunds = [...new Set(orders.map(o => o.fundName))].filter(Boolean);
-        let changed = false;
-        const newConfigs = { ...fundConfigs };
+        setFundConfigs(prevConfigs => {
+            const uniqueFunds = [...new Set(orders.map(o => o.fundName))].filter(Boolean);
+            let changed = false;
+            const newConfigs = { ...prevConfigs };
 
-        uniqueFunds.forEach(name => {
-            // Check if config exists OR if it exists but is missing assetClass
-            if ((!newConfigs[name] || !newConfigs[name].assetClass) && name !== 'Efectivo No Invertido') {
-                let assetClass = 'renta-variable';
-                // Normalizar nombre (quitar acentos) para mejorar el matching
-                const normalized = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                
-                if (normalized.includes('tresorerie') || normalized.includes('monetario') || normalized.includes('liquidez') || normalized.includes('money market') || normalized.includes('treasury')) {
-                    assetClass = 'monetario';
-                } else if (normalized.includes('bono') || normalized.includes('renta fija') || normalized.includes('deuda') || normalized.includes('fixed income') || normalized.includes('bond')) {
-                    assetClass = 'renta-fija';
-                } else if (normalized.includes('deposito')) {
-                    assetClass = 'deposito';
-                }
+            uniqueFunds.forEach(name => {
+                if ((!newConfigs[name] || !newConfigs[name].assetClass) && name !== 'Efectivo No Invertido') {
+                    let assetClass = 'renta-variable';
+                    const normalized = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                    
+                    if (normalized.includes('tresorerie') || normalized.includes('monetario') || normalized.includes('liquidez') || normalized.includes('money market') || normalized.includes('treasury')) {
+                        assetClass = 'monetario';
+                    } else if (normalized.includes('bono') || normalized.includes('renta fija') || normalized.includes('deuda') || normalized.includes('fixed income') || normalized.includes('bond')) {
+                        assetClass = 'renta-fija';
+                    } else if (normalized.includes('deposito')) {
+                        assetClass = 'deposito';
+                    }
 
-                if (!newConfigs[name]) {
-                    newConfigs[name] = { morningstarId: '', targetPercent: 0, ter: 0, assetClass };
-                } else {
-                    newConfigs[name].assetClass = assetClass;
+                    if (!newConfigs[name]) {
+                        newConfigs[name] = { morningstarId: '', targetPercent: 0, ter: 0, assetClass };
+                    } else {
+                        newConfigs[name].assetClass = assetClass;
+                    }
+                    changed = true;
                 }
-                changed = true;
-            }
+            });
+
+            return changed ? newConfigs : prevConfigs;
         });
-
-        if (changed) {
-            setFundConfigs(newConfigs);
-        }
     }, [orders]);
 
     useEffect(() => {
@@ -256,6 +271,11 @@ function App() {
                 const portfolioFunds = Object.entries(fundConfigs)
                     .filter(([_, cfg]) => cfg.morningstarId)
                     .map(([name, cfg]) => ({ name, id: cfg.morningstarId }));
+
+                // Add standard benchmarks to the fetch list
+                Object.entries(STANDARD_BENCHMARKS).forEach(([name, id]) => {
+                    portfolioFunds.push({ name, id });
+                });
 
                 await Promise.all(portfolioFunds.map(async (fund) => {
                     try {
@@ -374,7 +394,7 @@ function App() {
             const newOrder = { ...mapToDb(orderWithoutId), id: Date.now() }; 
             const newOrders = [mapFromDb(newOrder), ...orders];
             setOrders(newOrders);
-            await saveOrdersToDrive(session, driveFileId, newOrders.map(mapToDb));
+            await saveDataToDrive(session, driveFileId, newOrders.map(mapToDb), fundConfigs);
         } catch (err) {
             console.error("Failed to add order to backend", err);
         }
@@ -385,7 +405,7 @@ function App() {
             const dbReady = mapToDb(updatedData);
             const newOrders = orders.map(order => order.id === id ? mapFromDb({ ...order, ...dbReady }) : order);
             setOrders(newOrders);
-            await saveOrdersToDrive(session, driveFileId, newOrders.map(mapToDb));
+            await saveDataToDrive(session, driveFileId, newOrders.map(mapToDb), fundConfigs);
         } catch (err) {
             console.error("Failed to update order in backend", err);
         }
@@ -395,7 +415,7 @@ function App() {
         try {
             const newOrders = orders.filter(order => order.id !== id);
             setOrders(newOrders);
-            await saveOrdersToDrive(session, driveFileId, newOrders.map(mapToDb));
+            await saveDataToDrive(session, driveFileId, newOrders.map(mapToDb), fundConfigs);
         } catch (err) {
             console.error("Failed to delete order from backend", err);
         }
@@ -405,7 +425,7 @@ function App() {
         try {
             const newOrders = [];
             setOrders(newOrders);
-            await saveOrdersToDrive(session, driveFileId, newOrders);
+            await saveDataToDrive(session, driveFileId, newOrders, fundConfigs);
             setCurrentView('dashboard');
         } catch (err) {
             console.error("Failed to clear backend", err);
@@ -427,9 +447,9 @@ function App() {
 
         try {
             const newOrdersData = initialData.map((o, idx) => ({...o, id: Date.now() + idx}));
-            const newOrders = [...newOrdersData].map(mapFromDb).sort((a, b) => new Date(b.date) - new Date(a.date));
-            setOrders(newOrders);
-            await saveOrdersToDrive(session, driveFileId, newOrdersData);
+            const newOrdersLocal = [...newOrdersData].map(mapFromDb).sort((a, b) => new Date(b.date) - new Date(a.date));
+            setOrders(newOrdersLocal);
+            await saveDataToDrive(session, driveFileId, newOrdersData, fundConfigs);
             setCurrentView('dashboard');
         } catch (err) {
             console.error("Failed to restore default", err);
@@ -459,7 +479,7 @@ function App() {
                 });
                 const newOrders = [...cleanedOrders].map(mapFromDb).sort((a, b) => new Date(b.date) - new Date(a.date));
                 setOrders(newOrders);
-                await saveOrdersToDrive(session, driveFileId, cleanedOrders);
+                await saveDataToDrive(session, driveFileId, cleanedOrders, fundConfigs);
                 setCurrentView('dashboard');
             } catch (err) {
                 console.error("Failed to import to backend", err);
@@ -498,9 +518,9 @@ function App() {
                 fundname: 'Efectivo No Invertido',
                 date: new Date().toISOString()
             };
-            const newOrders = [...noCashOrders.map(mapToDb), newCashOrder];
-            setOrders(newOrders.map(mapFromDb));
-            await saveOrdersToDrive(session, driveFileId, newOrders);
+            const dbOrders = [...noCashOrders.map(mapToDb), newCashOrder];
+            setOrders(dbOrders.map(mapFromDb));
+            await saveDataToDrive(session, driveFileId, dbOrders, fundConfigs);
         } catch (err) {
             console.error("Failed to update cash balance", err);
         }
@@ -646,6 +666,37 @@ function App() {
     const inflationHurdleCost = inflationTargetValue > 0 && totalCapitalAportado > 0 ? (inflationTargetValue - totalCapitalAportado) : 0;
     const isBeatingInflation = (plusvaliaLatente + availableCashValue) >= (inflationHurdleCost + availableCashValue);
 
+    // --- Advanced Intelligence: Monthly Matrix & Drawdown ---
+    const monthlyData = useMemo(() => {
+        return calculateMonthlyReturns(validOrders, historicalNavs, currentNavs);
+    }, [validOrders, historicalNavs, currentNavs]);
+
+    // Calculate Max Drawdown from historical metrics
+    // Since we don't have the full day-by-day chartData here yet (it's inside HistoricalChart),
+    // we can approximate it or use the monthly endValues for a rougher but useful metric.
+    const maxDrawdown = useMemo(() => {
+        if (!monthlyData || monthlyData.length === 0) return 0;
+        return calculateMaxDrawdown(monthlyData.map(d => ({ value: d.endValue })));
+    }, [monthlyData]);
+
+    // Estimated Tax (Spain: 19% up to 6k, 21% up to 50k, 23% up to 200k, 26% > 200k)
+    const estimateTax = (profit) => {
+        if (profit <= 0) return 0;
+        let tax = 0;
+        if (profit <= 6000) return profit * 0.19;
+        
+        tax += 6000 * 0.19;
+        if (profit <= 50000) return tax + (profit - 6000) * 0.21;
+        
+        tax += (50000 - 6000) * 0.21;
+        if (profit <= 200000) return tax + (profit - 50000) * 0.23;
+        
+        tax += (200000 - 50000) * 0.23;
+        return tax + (profit - 200000) * 0.26;
+    };
+
+    const fiscalImpact = estimateTax(plusvaliaLatente);
+
     // Calculate Fund-only metrics for the dashboard Rentabilidad card
     const fundHoldingsEntries = Object.entries(currentHoldings).filter(([_, data]) => !data.isDeposit);
     const fundCapitalAportado = fundHoldingsEntries.reduce((sum, [_, data]) => sum + data.invested, 0);
@@ -728,7 +779,7 @@ function App() {
                         <div className="md:col-span-2 bento-card p-5 flex flex-col justify-between min-h-[140px]">
                             <div className="flex justify-between items-center mb-2">
                                 <div className="text-slate-400 text-[9px] font-mono tracking-[0.15em] uppercase flex items-center gap-2">
-                                    <span className={`w-1.5 h-1.5 rounded-full ${systemStatus.status === 'online' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`} />
+                                    <span className={`w-1.5 h-1.5 rounded-full ${systemStatus.status === 'online' ? 'bg-emerald-500' : 'bg-amber-400 animate-pulse'}`} />
                                     Patrimonio Global
                                 </div>
                             </div>
@@ -769,112 +820,119 @@ function App() {
                                 {isPrivacyMode ? 'XXXX' : `${isPositive ? '+' : ''}${formatCurrency(plusvalia)}`}
                             </div>
                             <div className="flex flex-col gap-1 text-[9px] font-mono font-bold text-slate-500 uppercase">
-                                <div className="flex items-center gap-1.5"><span className="text-emerald-600/70">ROI {(fundRentabilidad >= 0 ? '+' : '')}{fundRentabilidad.toFixed(2)}%</span> <span className="w-1 h-1 bg-slate-300 rounded-full"/> REALIZ. {isPrivacyMode ? '***' : formatCurrency(totalRealizedProfit)}</div>
-                                <div className="text-slate-400">INFLACIÓN. {isPrivacyMode ? '***' : formatCurrency(inflationHurdleCost)}</div>
+                                <div className="flex items-center gap-1.5 justify-between">
+                                    <span>ROI {(fundRentabilidad >= 0 ? '+' : '')}{fundRentabilidad.toFixed(2)}%</span>
+                                    <span className="text-rose-400 font-medium">DRAWDOWN {isPrivacyMode ? 'X.X%' : `${maxDrawdown.toFixed(1)}%`}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 justify-between">
+                                    <span>INFLACIÓN. {isPrivacyMode ? '***' : formatCurrency(inflationHurdleCost)}</span>
+                                    <span className="text-slate-400">NETO (TAX) {isPrivacyMode ? '***' : formatCurrency(plusvaliaLatente - fiscalImpact)}</span>
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    {/* GRÁFICO HISTÓRICO */}
-                    <div className="bento-card p-4">
-                        <HistoricalChart seamless={true} orders={validOrders} historicalNavs={historicalNavs} isPrivacyMode={isPrivacyMode} currency={currency} formatCurrency={formatCurrency} />
-                    </div>
-
-                    {/* ── Row 2: Tables & Indicators ── */}
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
-                        {/* Historical Returns */}
-                        <div className="lg:col-span-2 bento-card p-5 overflow-hidden relative">
-                            <div className="flex items-center gap-2 mb-4">
-                                <div className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-100">
-                                    <BarChart2 size={14} />
+                    {/* ── SECCIÓN CENTRAL: GRÁFICO Y MÉTRICAS DETALLADAS ── */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        {/* GRÁFICO DE RENDIMIENTO (2/3) */}
+                        <div className="lg:col-span-2 bento-card p-6">
+                            <div className="flex items-center gap-2 mb-6">
+                                <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100">
+                                    <TrendingUp size={14} />
                                 </div>
-                                <span className="font-semibold text-sm text-slate-800">Rentabilidad Histórica</span>
+                                <span className="font-bold text-sm text-slate-800">Evolución de Patrimonio</span>
+                            </div>
+                            <HistoricalChart seamless={true} orders={validOrders} historicalNavs={historicalNavs} isPrivacyMode={isPrivacyMode} currency={currency} formatCurrency={formatCurrency} />
+                        </div>
+
+                        {/* RENTABILIDAD POR FONDO (1/3) */}
+                        <div className="bento-card p-6 overflow-hidden relative">
+                             <div className="flex items-center gap-2 mb-6">
+                                <div className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-100">
+                                    <Sparkles size={14} />
+                                </div>
+                                <span className="font-bold text-sm text-slate-800">Rendimiento Activos</span>
                             </div>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left text-xs">
                                     <thead>
                                         <tr className="text-slate-400 text-[10px] uppercase border-b border-slate-50">
-                                            <th className="pb-2 font-semibold">Fondo</th>
-                                            <th className="pb-2 text-right font-semibold">Mi TIR</th>
-                                            <th className="pb-2 text-right font-semibold">1 Año</th>
-                                            <th className="pb-2 text-right font-semibold">3 Años</th>
+                                            <th className="pb-2 font-semibold">Activo</th>
+                                            <th className="pb-2 text-right font-semibold">TIR</th>
+                                            <th className="pb-2 text-right font-semibold">1A</th>
                                         </tr>
                                     </thead>
-                                    <tbody>
+                                    <tbody className="text-xs font-mono">
                                         {Object.entries(currentHoldings).filter(([_, data]) => !data.isDeposit && data.invested !== 0).map(([name, data]) => {
                                             const matchKey = getMatchingFundKey(currentNavs, name);
                                             const currentNav = currentNavs[matchKey] || (data.shares > 0 ? (data.invested / data.shares) : 0);
                                             const history = historicalNavs[matchKey] || [];
                                             
                                             let ret1A = calculateTrailingReturn(history, currentNav, 1);
-                                            let ret3A = calculateTrailingReturn(history, currentNav, 3);
-                                            
                                             const fundOrders = validOrders.filter(o => o.fundName === name);
                                             const currentVal = data.shares * currentNav;
                                             const myTir = fundOrders.length > 0 && currentVal > 0 ? calculateMWR(fundOrders, currentVal) : null;
 
                                             return (
                                                 <tr key={name} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors">
-                                                    <td className="py-3.5 text-slate-700 font-medium whitespace-nowrap overflow-hidden text-ellipsis max-w-[160px]" title={name}>{name}</td>
-                                                    <td className={`py-3.5 text-right font-semibold font-mono ${myTir !== null ? (myTir >= 0 ? 'text-indigo-600' : 'text-rose-600') : 'text-slate-400'}`}>
-                                                        {isPrivacyMode ? 'XX.X%' : (myTir !== null ? `${myTir >= 0 ? '+' : ''}${myTir.toFixed(1)}%` : '-')}
+                                                    <td className="py-4 text-slate-700 font-medium truncate max-w-[100px]" title={name}>{name.split(' ').slice(0,2).join(' ')}...</td>
+                                                    <td className={`py-4 text-right font-bold ${myTir !== null ? (myTir >= 0 ? 'text-indigo-600' : 'text-rose-600') : 'text-slate-400'}`}>
+                                                        {isPrivacyMode ? '••' : (myTir !== null ? `${myTir.toFixed(2)}%` : '-')}
                                                     </td>
-                                                    <td className={`py-3.5 text-right font-medium font-mono ${ret1A !== null ? (ret1A >= 0 ? 'text-emerald-600' : 'text-rose-600') : 'text-slate-400'}`}>
-                                                        {isPrivacyMode ? 'XX.X%' : (ret1A !== null ? `${ret1A >= 0 ? '+' : ''}${ret1A.toFixed(1)}%` : '-')}
-                                                    </td>
-                                                    <td className={`py-3.5 text-right font-medium font-mono ${ret3A !== null ? (ret3A >= 0 ? 'text-emerald-600' : 'text-rose-600') : 'text-slate-400'}`}>
-                                                        {isPrivacyMode ? 'XX.X%' : (ret3A !== null ? `${ret3A >= 0 ? '+' : ''}${ret3A.toFixed(1)}%` : '-')}
+                                                    <td className={`py-4 text-right font-bold ${ret1A !== null ? (ret1A >= 0 ? 'text-emerald-600' : 'text-rose-600') : 'text-slate-400'}`}>
+                                                        {isPrivacyMode ? '••' : (ret1A !== null ? `${ret1A.toFixed(2)}%` : '-')}
                                                     </td>
                                                 </tr>
                                             );
                                         })}
-                                        {Object.keys(currentHoldings).filter(k => !currentHoldings[k].isDeposit).length === 0 && (
-                                            <tr>
-                                                <td colSpan="4" className="py-6 text-center text-slate-400 text-xs">No hay fondos activos.</td>
-                                            </tr>
-                                        )}
                                     </tbody>
                                 </table>
                             </div>
                         </div>
+                    </div>
 
-                        {/* Equilibrio */}
-                        <div className="bg-white border border-slate-200/60 rounded-[20px] shadow-sm p-6 relative overflow-hidden">
-                            <div className="flex items-center gap-3 mb-6">
-                                <div className="p-2.5 rounded-[12px] bg-sky-50 text-sky-600 border border-sky-100">
-                                    <RefreshCw size={18} />
-                                </div>
-                                <span className="font-semibold text-slate-800">Equilibrio</span>
-                            </div>
-                            <div className="w-full bg-slate-100 rounded-full h-3 mt-4 overflow-hidden border border-slate-200/50">
-                                {(() => {
-                                    const deviations = Object.entries(currentHoldings).map(([name, data]) => {
-                                        const matchKey = getMatchingFundKey(currentNavs, name);
-                                        const fallbackNav = data.shares > 0 ? (data.invested / data.shares) : 0;
-                                        let currentVal = data.shares * (currentNavs[matchKey] || fallbackNav);
-                                        if (data.shares === 0 && data.invested !== 0) {
-                                            currentVal = data.invested;
-                                        }
-                                        const percent = totalCarteraValorada > 0 ? (currentVal / totalCarteraValorada) * 100 : 0;
-                                        return Math.abs(50 - percent);
-                                    });
-                                    const avgDev = deviations.length > 0 ? deviations.reduce((a, b) => a + b, 0) / deviations.length : 0;
-                                    const score = Math.max(0, 100 - (avgDev * 2));
-                                    return (
-                                        <div
-                                            className={`h-full rounded-full transition-all duration-500 ${score > 90 ? 'bg-gradient-to-r from-emerald-400 to-teal-400' : score > 70 ? 'bg-gradient-to-r from-sky-400 to-indigo-400' : 'bg-gradient-to-r from-rose-400 to-red-500'}`}
-                                            style={{ width: `${score}%` }}
-                                        />
-                                    );
-                                })()}
-                        </div>
+                    {/* MATRIZ DE RENDIMIENTO MENSUAL: ANCHO COMPLETO PARA LEGIBILIDAD */}
+                    <div className="mt-2">
+                        <MonthlyHeatmap monthlyData={monthlyData} isPrivacyMode={isPrivacyMode} />
                     </div>
                 </div>
+            ) : currentView === 'portfolio' ? (
+                <div className="animate-fade-in-up">
+                    <Portfolio 
+                        orders={regularOrders} 
+                        currentNavs={currentNavs} 
+                        historicalNavs={historicalNavs} 
+                        janNavs={janNavs} 
+                        currentHoldings={currentHoldings} 
+                        totalCarteraValorada={totalCarteraValorada} 
+                        isPrivacyMode={isPrivacyMode} 
+                        formatCurrency={formatCurrency} 
+                        fundConfigs={fundConfigs} 
+                    />
+                </div>
+            ) : currentView === 'analisis' ? (
+                <div className="space-y-6 animate-fade-in-up">
+                    <header className="mb-2">
+                        <h1 className="text-2xl font-sans font-bold text-slate-900 mb-1 tracking-tight">Análisis Estratégico</h1>
+                        <div className="text-[10px] font-mono whitespace-nowrap overflow-hidden text-ellipsis text-slate-400 tracking-[0.2em] uppercase">Simulaciones y Métricas Avanzadas</div>
+                    </header>
 
-                    <div className="mt-6 border-t border-slate-200/60 pt-6 w-full animate-fade-in-up">
-                        <Portfolio orders={regularOrders} currentNavs={currentNavs} historicalNavs={historicalNavs} janNavs={janNavs} currentHoldings={currentHoldings} totalCarteraValorada={totalCarteraValorada} isPrivacyMode={isPrivacyMode} formatCurrency={formatCurrency} fundConfigs={fundConfigs} />
+                    <FIRESimulator 
+                        currentPortfolioValue={totalCarteraValorada} 
+                        currentTIR={globalMWR} 
+                        formatCurrency={formatCurrency}
+                        isPrivacyMode={isPrivacyMode}
+                    />
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <CorrelationMatrix historicalNavs={historicalNavs} isPrivacyMode={isPrivacyMode} />
+                        <SmartAssistant 
+                            currentHoldings={currentHoldings} 
+                            totalCarteraValorada={totalCarteraValorada} 
+                            fundConfigs={fundConfigs}
+                            formatCurrency={formatCurrency}
+                        />
                     </div>
-
                 </div>
             ) : currentView === 'orders' ? (
                 <div className="max-w-5xl mx-auto">
@@ -882,7 +940,7 @@ function App() {
                         <div className="flex items-center justify-between">
                             <div className="flex flex-col">
                                 <h1 className="text-2xl md:text-3xl font-bold text-text">Órdenes</h1>
-                                <div className="text-[9px] font-mono text-primary/50 bg-primary/5 border border-primary/10 px-2 py-0.5 rounded-md w-fit mt-1">Engine v2.0 — Historical Memory</div>
+                                <div className="text-[9px] font-mono text-indigo-500 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md w-fit mt-1">Engine v2.0 — Strategic Hub</div>
                             </div>
                         </div>
                         <div className="text-text-muted text-sm mt-2">Registra y gestiona todas tus operaciones de compra, venta y depósito.</div>
