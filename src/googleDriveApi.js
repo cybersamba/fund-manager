@@ -43,35 +43,72 @@ export const getOrInitFileId = async (accessToken) => {
     const newFileId = createData.id;
 
     // 3. Subimos el contenido inicial como un JSON vacío []
-    await saveOrdersToDrive(accessToken, newFileId, []);
+    // 3. Subimos el contenido inicial como un JSON vacío
+    await saveDataToDrive(accessToken, newFileId, [], {});
 
     return newFileId;
 };
 
-export const fetchOrdersFromDrive = async (accessToken, fileId) => {
+export const fetchDataFromDrive = async (accessToken, fileId) => {
     const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
         headers: getHeaders(accessToken)
     });
     
-    if (!res.ok) throw new Error("No se pudo leer el contenido del archivo");
+    if (res.status === 401) {
+        throw new Error("AUTH_EXPIRED");
+    }
+
+    if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Error de Drive (${res.status}): ${errText}`);
+    }
+
     const text = await res.text();
-    if (!text) return []; // Si el archivo está vacío (0 bytes) devolvemos array vacío
+    const trimmedText = text ? text.trim() : "";
+    
+    if (!trimmedText) {
+        return { orders: [], fundConfigs: {} };
+    }
+
     try {
-        const data = JSON.parse(text);
-        return Array.isArray(data) ? data : [];
+        const data = JSON.parse(trimmedText);
+        
+        // Validación de integridad mínima
+        if (typeof data !== 'object') {
+            throw new Error("El formato del archivo en Drive no es válido.");
+        }
+
+        // Compatibilidad hacia atrás: si los datos son un array, son solo órdenes (Legacy v1)
+        if (Array.isArray(data)) {
+            return { orders: data, fundConfigs: {} };
+        }
+
+        return {
+            orders: Array.isArray(data.orders) ? data.orders : [],
+            fundConfigs: data.fundConfigs || {}
+        };
     } catch(e) {
-        return [];
+        console.error("Fallo crítico al parsear datos de Drive:", e);
+        // IMPORTANTE: Lanzamos el error para que la App NO intente sobrescribir el archivo dañado con un [] vacío
+        throw new Error("CORRUPTED_DATA_DETECTED: No se pudo leer el archivo de Drive de forma segura.");
     }
 };
 
-export const saveOrdersToDrive = async (accessToken, fileId, orders) => {
+export const saveDataToDrive = async (accessToken, fileId, orders, fundConfigs) => {
+    const payload = {
+        orders,
+        fundConfigs,
+        updatedAt: new Date().toISOString(),
+        version: '2.0'
+    };
+    
     const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
         method: 'PATCH',
         headers: {
             ...getHeaders(accessToken),
             'Content-Type': 'application/json'
         },
-        body: JSON.stringify(orders, null, 2) // Guardar bonito
+        body: JSON.stringify(payload, null, 2)
     });
     
     if (!res.ok) {
