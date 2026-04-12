@@ -1,5 +1,5 @@
 import React from 'react';
-import { BookOpen, TrendingUp, Wallet, Info, ArrowUpRight, ArrowDownLeft, Target, Award, ArrowRightLeft, Flame, Zap, ShieldCheck, Brain, Server, Database, Settings, HelpCircle, AlertTriangle } from 'lucide-react';
+import { BookOpen, TrendingUp, Wallet, Info, ArrowUpRight, ArrowDownLeft, Target, Award, ArrowLeftRight, Flame, Zap, ShieldCheck, Brain, Server, Database, Settings, HelpCircle, AlertTriangle, History } from 'lucide-react';
 
 export default function Guide() {
     return (
