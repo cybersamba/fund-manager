@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Target, History, Settings, LogOut, Activity, ShieldCheck, Coins, PiggyBank, BookOpen, Star, BrainCircuit } from 'lucide-react';
+import { LayoutDashboard, Target, History, Settings, LogOut, Activity, ShieldCheck, Coins, PiggyBank, BookOpen, Star, Brain } from 'lucide-react';
 
 export default function Layout({ currentView, onNavigate, user, onLogout, children, headerActions }) {
     const [scrolled, setScrolled] = useState(false);
@@ -15,7 +15,7 @@ export default function Layout({ currentView, onNavigate, user, onLogout, childr
     const navItems = [
         { id: 'dashboard', label: 'Monitor', icon: <LayoutDashboard size={18} /> },
         { id: 'portfolio', label: 'Cartera', icon: <Target size={18} /> },
-        { id: 'analisis', label: 'Análisis', icon: <BrainCircuit size={18} /> },
+        { id: 'analisis', label: 'Análisis', icon: <Brain size={18} /> },
         { id: 'orders', label: 'Libro', icon: <History size={18} /> },
         { id: 'guide', label: 'Guía', icon: <BookOpen size={18} /> },
         { id: 'settings', label: 'Ajustes', icon: <Settings size={18} /> }
