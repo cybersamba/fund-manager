@@ -132,6 +132,9 @@ function App() {
     const [systemStatus, setSystemStatus] = useState({ status: 'connecting', processedItems: 0 });
 
     const handleHardRefresh = async () => {
+        localStorage.removeItem('fundManagerHistoricalNavs');
+        localStorage.removeItem('fundManagerNavs');
+        localStorage.removeItem('fundManagerJanNavs');
         if ('caches' in window) {
             const names = await caches.keys();
             await Promise.all(names.map(name => caches.delete(name)));

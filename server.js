@@ -122,6 +122,22 @@ app.get('/api/status', (req, res) => {
     res.json({ status: 'online', timestamp: new Date().toISOString() });
 });
 
+// Real-time NAV endpoint
+import('./netlify/functions/nav.js').then(({ handler: navHandler }) => {
+    app.get('/api/nav', async (req, res) => {
+        try {
+            const event = {
+                httpMethod: req.method,
+                queryStringParameters: req.query
+            };
+            const result = await navHandler(event);
+            res.status(result.statusCode).set(result.headers || {}).send(result.body);
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+});
+
 initDataFile().then(() => {
     app.listen(PORT, () => {
         console.log(`Backend server running on http://localhost:${PORT}`);
