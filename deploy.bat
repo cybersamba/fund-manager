@@ -24,7 +24,12 @@ if %ERRORLEVEL% neq 0 (
 echo.
 echo [2/2] Desplegando en Netlify...
 echo ──────────────────────────────────────────
-call netlify deploy --prod --dir=dist
+where netlify >nul 2>nul
+if %ERRORLEVEL% equ 0 (
+    call netlify deploy --prod --dir=dist --functions=netlify/functions
+) else (
+    call npx netlify-cli deploy --prod --dir=dist --functions=netlify/functions
+)
 
 if %ERRORLEVEL% neq 0 (
     echo.
